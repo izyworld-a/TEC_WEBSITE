@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEC Weekly Set Goals and Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <style>
+/* Base styles and variables */
+:root {
+    --primary-color: #4a76c9;
+    --primary-hover: #3a5fa2;
+    --text-main: #333;
+    --border-color: #000;
+    --bg-main: #fff;
+    --bg-light: #f4f6fa;
+    --input-bg: #f0f2f5;
+    --font-family: 'Inter', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-light);
+    color: var(--text-main);
+    line-height: 1.6;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    background-color: var(--bg-main);
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.primary-btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.primary-btn:hover { background-color: var(--primary-hover); }
+.primary-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+
+.secondary-btn {
+    background-color: #edf2fa;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+.secondary-btn:hover { background-color: var(--primary-color); color: white; }
+
+.hidden { display: none !important; opacity: 0; }
+.fade-in {
+    display: block;
+    animation: fadeInSlideDown 0.5s forwards ease-out;
+}
+
+@keyframes fadeInSlideDown {
+    from { opacity: 0; transform: translateY(-15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.form-title {
+    text-align: center;
+    font-size: 24px;
+    padding: 20px 0;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+}
+
+.form-header-details {
+    display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; max-width: 500px;
+}
+.form-group { display: flex; align-items: center; }
+.form-group label { font-weight: 600; margin-right: 10px; min-width: 130px; }
+
+.underline-input {
+    border: none; border-bottom: 1px solid var(--border-color);
+    flex-grow: 1; padding: 5px; font-family: inherit; font-size: 15px; outline: none; background: transparent;
+}
+.underline-input:focus { border-bottom: 2px solid var(--primary-color); }
+
+.table-container { overflow-x: auto; margin-bottom: 30px; }
+table { width: 100%; border-collapse: collapse; border: 1px solid var(--border-color); }
+th, td { border: 1px solid var(--border-color); padding: 8px; vertical-align: top; }
+th { text-align: center; background-color: #fafafa; font-weight: 700; padding: 12px 10px; }
+th i { font-weight: normal; font-size: 13px; display: block; margin-top: 4px; }
+
+.col-goal { width: 5%; text-align: center; font-weight: bold; }
+.col-task { width: 35%; }
+.col-status { width: 25%; text-align: center; }
+.col-penalty { width: 10%; text-align: center; }
+.col-proof { width: 25%; }
+
+.table-textarea, .table-select {
+    width: 100%; border: none; background: transparent; padding: 8px; font-family: inherit; font-size: 14px; outline: none;
+}
+.table-textarea { resize: vertical; min-height: 40px; }
+.table-select { cursor: pointer; }
+.table-textarea:focus, .table-select:focus { background-color: var(--input-bg); border-radius: 4px; }
+tr td:first-child { text-align: center; font-weight: bold; }
+
+.reflection-section { display: flex; flex-direction: column; gap: 20px; }
+.question-group { display: flex; flex-direction: column; gap: 8px; }
+.question-label { font-weight: 600; }
+.checkbox-group { display: flex; gap: 40px; margin-left: 20px; }
+.checkbox-label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+input[type="checkbox"].styled-checkbox { width: 20px; height: 20px; cursor: pointer; accent-color: var(--primary-color); border: 1px solid var(--border-color); }
+
+.styled-textarea {
+    width: 100%; border: 1px solid var(--border-color); background-color: var(--input-bg);
+    padding: 12px; font-family: inherit; font-size: 14px; border-radius: 4px; resize: vertical; outline: none; min-height: 40px;
+}
+.styled-textarea:focus { border-color: var(--primary-color); background-color: #fff; box-shadow: 0 0 0 2px rgba(74, 118, 201, 0.2); }
+
+/* Edit Panel Overlay */
+.overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;
+}
+.modal {
+    background: #fff; padding: 30px; border-radius: 8px; text-align: center; max-width: 400px; width: 90%;
+}
+.modal input { width: 100%; padding: 10px; margin-top: 10px; font-size: 16px; text-align: center; letter-spacing: 2px;}
+.modal button { margin-top: 20px; width: 100%; }
+
+/* Responsive Mobile Layout */
+@media (max-width: 768px) {
+    body { padding: 10px; }
+    .container { padding: 20px; }
+    .header-section { flex-direction: column; gap: 15px; }
+    .header-section div, .actions { flex-direction: column; width: 100%; }
+    .primary-btn, .secondary-btn { width: 100%; text-align: center; }
+    
+    .form-header-details { max-width: 100%; }
+    .form-group { flex-direction: column; align-items: flex-start; }
+    .form-group label { margin-bottom: 5px; }
+    .underline-input { width: 100%; }
+    .checkbox-group { margin-left: 0; flex-direction: column; gap: 15px; }
+    
+    /* Responsive Table */
+    table, thead, tbody, th, td, tr { display: block; }
+    thead tr { position: absolute; top: -9999px; left: -9999px; }
+    tr { border: 1px solid var(--border-color); margin-bottom: 20px; border-radius: 8px; overflow: hidden; background: #fafafa; padding-bottom: 10px; }
+    td { border: none; border-bottom: 1px solid #ddd; position: relative; padding: 10px; text-align: left !important; }
+    td:last-child { border-bottom: 0; }
+    
+    /* Create labels for mobile view */
+    td::before { 
+        display: block; font-weight: bold; margin-bottom: 5px; color: var(--primary-color); font-size: 13px; text-transform: uppercase;
+    }
+    td:nth-of-type(1)::before { content: "Goal #"; }
+    td:nth-of-type(2)::before { content: "Task Description"; }
+    td:nth-of-type(3)::before { content: "Status"; }
+    td:nth-of-type(4)::before { content: "Penalty"; }
+    td:nth-of-type(5)::before { content: "Proof"; }
+
+    .col-goal, .col-task, .col-status, .col-penalty, .col-proof { width: 100%; }
+    .table-textarea, .table-select { border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+}
+
+@media print {
+    body { background-color: #fff; padding: 0; }
+    .container { max-width: 100%; box-shadow: none; padding: 0; margin: 0; }
+    .print-only-hide { display: none !important; }
+    .header-section { display: none !important; }
+    table th { background-color: transparent !important; }
+    .table-select, .table-textarea { padding: 4px; }
+    .styled-textarea { background-color: #fcfcfc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .form-title { margin-top: 0; padding-top: 0; }
+    #form-container { display: block !important; opacity: 1 !important; transform: none !important; }
+}
+    </style>
+</head>
+<body>
+
+    <!-- Modal for retrieving PIN -->
+    <div id="pin-modal" class="overlay hidden">
+        <div class="modal">
+            <h3>Retrieve Existing Form</h3>
+            <p style="margin-top: 10px; color: #666; font-size: 14px;">Enter the 4-digit PIN you were given when you first submitted your form.</p>
+            <input type="text" id="pin-input" placeholder="e.g. 5912" maxlength="4">
+            <button class="primary-btn" id="retrieve-btn">Retrieve Form</button>
+            <button class="secondary-btn" id="close-modal-btn" style="margin-top: 10px;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Alert Modal for generating PIN -->
+    <div id="success-modal" class="overlay hidden">
+        <div class="modal">
+            <h2 style="color: green;">Success!</h2>
+            <p style="margin-top: 10px;">Your form has been safely stored online.</p>
+            <div style="background: #f0f2f5; padding: 15px; margin-top: 15px; border-radius: 6px; border: 1px dashed #ccc;">
+                <strong>YOUR EDIT PIN:</strong><br>
+                <span id="display-pin" style="font-size: 32px; font-weight: 700; color: var(--primary-color);"></span>
+            </div>
+            <p style="margin-top: 10px; font-size: 13px; color: #666;">Write this down! You can use it to update this form (max 2 updates allowed).</p>
+            <button class="primary-btn" onclick="window.location.reload()">Done</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Initial header -->
+        <header class="header-section">
+            <div style="display:flex; gap: 10px;">
+                <button id="set-goal-btn" class="primary-btn">CREATE NEW REPORT</button>
+                <button id="open-edit-btn" class="secondary-btn">Edit Using PIN</button>
+                <a href="/TEC_Admin_Dashboard.html" class="secondary-btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center;">View Dashboard</a>
+            </div>
+            <div class="actions print-only-hide" id="form-actions" style="display: flex; gap: 10px; display: none;">
+                <button id="submit-btn" class="primary-btn">Submit Online</button>
+                <button id="update-btn" class="primary-btn hidden" style="background-color: #2e8b57;">Update Report</button>
+                <button id="print-btn" class="secondary-btn">Save as PDF</button>
+            </div>
+        </header>
+
+        <!-- The main form -->
+        <div id="form-container" class="hidden">
+            <h1 class="form-title">TEC WEEKLY SET GOALS AND REPORT</h1>
+
+            <div class="form-header-details">
+                <div class="form-group">
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="name" class="underline-input" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label for="date">Date:</label>
+                    <input type="date" id="date" name="date" class="underline-input">
+                </div>
+                <div class="form-group">
+                    <label for="num-goals" id="num-goals-label">Number of goals:</label>
+                    <input type="number" id="num-goals" name="num-goals" class="underline-input" min="1" max="10" value="5">
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="goals-table">
+                    <thead>
+                        <tr>
+                            <th class="col-goal">Goal</th>
+                            <th class="col-task">Task Description</th>
+                            <th class="col-status">Status <i>(Completed, Partially, Not Completed)</i></th>
+                            <th class="col-penalty">Penalty</th>
+                            <th class="col-proof">Proof</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        <!-- Rows injected by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="reflection-section">
+                <div class="question-group">
+                    <p class="question-label">1. Did you complete your goal?</p>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label"><input type="checkbox" name="completed-yes" class="styled-checkbox"> Yes</label>
+                        <label class="checkbox-label"><input type="checkbox" name="completed-no" class="styled-checkbox"> No</label>
+                    </div>
+                </div>
+
+                <div class="question-group">
+                    <p class="question-label">2. What helped you get there?</p>
+                    <textarea class="styled-textarea" rows="2"></textarea>
+                </div>
+
+                <div class="question-group">
+                    <p class="question-label">3. If no, what happened? <em>(Skip if completed OR write honestly if not)</em></p>
+                    <textarea class="styled-textarea" rows="2"></textarea>
+                </div>
+
+                <div class="question-group">
+                    <p class="question-label">4. What will you do differently next week?</p>
+                    <textarea class="styled-textarea" rows="2"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+// ---------- FIREBASE CONFIGURATION ----------
+const firebaseConfig = {
+  apiKey: "AIzaSyDFLiw0xhfxKDftuPLEe_-FH10rDqvn3Rc",
+  authDomain: "tec-weekly-goals.firebaseapp.com",
+  projectId: "tec-weekly-goals",
+  storageBucket: "tec-weekly-goals.firebasestorage.app",
+  messagingSenderId: "682881802889",
+  appId: "1:682881802889:web:ce1760c069c1ad5bb01c58",
+  measurementId: "G-HV41WSHDHX"
+};
+
+// Initialize Firebase
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.firestore();
+
+// Global document tracker for updates
+let currentDocId = null;
+let currentUpdateCount = 0;
+
+document.addEventListener('DOMContentLoaded', () => {
+    // UI Elements
+    const setGoalBtn = document.getElementById('set-goal-btn');
+    const openEditBtn = document.getElementById('open-edit-btn');
+    const formActionsContainer = document.getElementById('form-actions');
+    const formContainer = document.getElementById('form-container');
+    const submitBtn = document.getElementById('submit-btn');
+    const updateBtn = document.getElementById('update-btn');
+    const printBtn = document.getElementById('print-btn');
+    const numGoalsInput = document.getElementById('num-goals');
+    const tableBody = document.getElementById('table-body');
+    const checkboxYes = document.querySelector('input[name="completed-yes"]');
+    const checkboxNo = document.querySelector('input[name="completed-no"]');
+    
+    // Modals
+    const pinModal = document.getElementById('pin-modal');
+    const successModal = document.getElementById('success-modal');
+    const displayPin = document.getElementById('display-pin');
+
+    // Helper: Compress images to prevent 1MB Firestore limit
+    function compressImage(file, callback) {
+        const reader = new FileReader();
+        reader.onload = event => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width, height = img.height;
+                const MAX_SIZE = 800;
+
+                if (width > height) {
+                    if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+                } else {
+                    if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+                }
+
+                canvas.width = width; canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                callback(canvas.toDataURL('image/jpeg', 0.6)); // Compress to 60% quality JPEG
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 1. Reveal Form for NEW Report
+    setGoalBtn.addEventListener('click', () => {
+        setGoalBtn.parentElement.style.display = 'none';
+        formActionsContainer.style.display = 'flex';
+        formContainer.classList.remove('hidden');
+        formContainer.classList.add('fade-in');
+        
+        generateTableRows(numGoalsInput.value || 5);
+        if (!document.getElementById('date').value) {
+            document.getElementById('date').valueAsDate = new Date();
+        }
+    });
+
+    // 2. Editing Logic
+    openEditBtn.addEventListener('click', () => {
+        pinModal.classList.remove('hidden');
+    });
+    document.getElementById('close-modal-btn').addEventListener('click', () => {
+        pinModal.classList.add('hidden');
+    });
+
+    document.getElementById('retrieve-btn').addEventListener('click', async () => {
+        const pin = document.getElementById('pin-input').value.trim();
+        if(pin.length !== 4) return alert('Enter a valid 4 digit PIN');
+        
+        const btn = document.getElementById('retrieve-btn');
+        btn.innerText = "Searching...";
+        btn.disabled = true;
+
+        try {
+            const querySnapshot = await db.collection("submissions").where("pin", "==", pin).get();
+            if (querySnapshot.empty) {
+                alert("No form found with that PIN.");
+                btn.innerText = "Retrieve Form";
+                btn.disabled = false;
+                return;
+            }
+
+            const doc = querySnapshot.docs[0];
+            const data = doc.data();
+            
+            // Check limits
+            if (data.updateCount >= 2) {
+                alert("This form has already been updated the maximum allowed times (2). It is now locked.");
+                btn.innerText = "Retrieve Form";
+                btn.disabled = false;
+                return;
+            }
+
+            // Load data
+            currentDocId = doc.id;
+            currentUpdateCount = data.updateCount || 0;
+            
+            // Fill headers
+            document.getElementById('name').value = data.name || '';
+            document.getElementById('date').value = data.date || '';
+            numGoalsInput.value = data.numGoals;
+            numGoalsInput.disabled = true; // Prevent changing goal counts on edit to avoid messy arrays
+            
+            // Fill Reflection
+            checkboxYes.checked = (data.completedGoal === 'Yes');
+            checkboxNo.checked = (data.completedGoal === 'No');
+            document.querySelectorAll('.styled-textarea')[0].value = data.helped || '';
+            document.querySelectorAll('.styled-textarea')[1].value = data.whatHappened || '';
+            document.querySelectorAll('.styled-textarea')[2].value = data.differently || '';
+
+            // Generate table
+            tableBody.innerHTML = '';
+            data.tasks.forEach((t, index) => {
+                const i = index + 1;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${i}</td>
+                    <td><textarea class="table-textarea task-desc" rows="2">${t.taskDesc || ''}</textarea></td>
+                    <td>
+                        <select class="table-select task-status">
+                            <option value="" disabled ${!t.status ? 'selected' : ''}></option>
+                            <option value="Completed" ${t.status==='Completed'?'selected':''}>Completed</option>
+                            <option value="Partially" ${t.status==='Partially'?'selected':''}>Partially</option>
+                            <option value="Not Completed" ${t.status==='Not Completed'?'selected':''}>Not Completed</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select class="table-select task-penalty">
+                            <option value="0" ${t.penalty==='0'?'selected':''}>0</option>
+                            <option value="N1000" ${t.penalty==='N1000'?'selected':''}>N1000</option>
+                        </select>
+                    </td>
+                    <td>
+                        <textarea class="table-textarea task-proof" rows="1">${t.proofText || ''}</textarea>
+                        <input type="file" accept="image/*" class="task-proof-file print-only-hide" style="margin-top: 5px; font-size: 12px; width: 100%;">
+                        <div class="proof-preview">
+                            ${t.proofImage ? `<img src="${t.proofImage}" style="max-width: 100%; max-height: 120px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;">` : ''}
+                        </div>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+
+                // Image handler
+                const fileInput = tr.querySelector('.task-proof-file');
+                const previewContainer = tr.querySelector('.proof-preview');
+                fileInput.addEventListener('change', function() {
+                    if (this.files[0]) {
+                        compressImage(this.files[0], (dataUrl) => {
+                            previewContainer.innerHTML = '<img src="' + dataUrl + '" style="max-width: 100%; max-height: 120px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;">';
+                        });
+                    }
+                });
+            });
+
+            // Adjust UI
+            pinModal.classList.add('hidden');
+            setGoalBtn.parentElement.style.display = 'none';
+            
+            submitBtn.classList.add('hidden');
+            updateBtn.classList.remove('hidden');
+            formActionsContainer.style.display = 'flex';
+            formContainer.classList.remove('hidden');
+            formContainer.classList.add('fade-in');
+
+        } catch(e) {
+            console.error(e);
+            alert("Error connecting to database.");
+            btn.innerText = "Retrieve Form";
+            btn.disabled = false;
+        }
+    });
+
+    // 3. Gathering Payload Function
+    function gatherPayload() {
+        const payload = {
+            name: document.getElementById('name').value.trim(),
+            date: document.getElementById('date').value,
+            numGoals: numGoalsInput.value,
+            tasks: [],
+            completedGoal: checkboxYes.checked ? 'Yes' : (checkboxNo.checked ? 'No' : ''),
+            helped: document.querySelectorAll('.styled-textarea')[0].value,
+            whatHappened: document.querySelectorAll('.styled-textarea')[1].value,
+            differently: document.querySelectorAll('.styled-textarea')[2].value
+        };
+
+        const rows = tableBody.querySelectorAll('tr');
+        rows.forEach(row => {
+            const previewImg = row.querySelector('.proof-preview img');
+            payload.tasks.push({
+                goalNum: row.children[0].innerText,
+                taskDesc: row.querySelector('.task-desc').value,
+                status: row.querySelector('.task-status').value,
+                penalty: row.querySelector('.task-penalty').value,
+                proofText: row.querySelector('.task-proof').value,
+                proofImage: previewImg ? previewImg.src : null
+            });
+        });
+        return payload;
+    }
+
+    // 4. SUBMIT (NEW)
+    submitBtn.addEventListener('click', async () => {
+        const payload = gatherPayload();
+        if (!payload.name) return alert("Please enter your name first!");
+
+        submitBtn.innerText = "Saving to Firebase...";
+        submitBtn.disabled = true;
+
+        const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
+
+        try {
+            await db.collection("submissions").add({
+                ...payload,
+                pin: generatedPin,
+                updateCount: 0,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // Show Success Modal
+            displayPin.innerText = generatedPin;
+            successModal.classList.remove('hidden');
+
+        } catch (e) {
+            console.error(e);
+            alert('Failed to connect to Firebase. Did you create the Firestore Database?');
+            submitBtn.innerText = "Submit Online";
+            submitBtn.disabled = false;
+        }
+    });
+
+    // 5. UPDATE (EXISTS)
+    updateBtn.addEventListener('click', async () => {
+        const payload = gatherPayload();
+        if (!payload.name) return alert("Please enter your name first!");
+
+        updateBtn.innerText = "Updating...";
+        updateBtn.disabled = true;
+
+        try {
+            await db.collection("submissions").doc(currentDocId).update({
+                ...payload,
+                updateCount: firebase.firestore.FieldValue.increment(1),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            alert(`Successfully updated! (Update ${currentUpdateCount + 1} of 2)`);
+            window.location.reload();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to update.');
+            updateBtn.innerText = "Update Report";
+            updateBtn.disabled = false;
+        }
+    });
+
+    // Handle printing
+    printBtn.addEventListener('click', () => window.print());
+
+    // Checkboxes
+    checkboxYes.addEventListener('change', () => { if (checkboxYes.checked) checkboxNo.checked = false; });
+    checkboxNo.addEventListener('change', () => { if (checkboxNo.checked) checkboxYes.checked = false; });
+
+    // New Row Generation (Only used when initially creating)
+    const updateRows = (e) => {
+        if(currentDocId) return; // Block row generation if editing
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > 10) val = 10;
+        e.target.value = val;
+        generateTableRows(val);
+    };
+    numGoalsInput.addEventListener('input', updateRows);
+
+    function generateTableRows(count) {
+        const currentRowCount = tableBody.children.length;
+        if (count > currentRowCount) {
+            for (let i = currentRowCount + 1; i <= count; i++) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${i}</td>
+                    <td><textarea class="table-textarea task-desc" rows="2"></textarea></td>
+                    <td>
+                        <select class="table-select task-status">
+                            <option value="" disabled selected></option>
+                            <option value="Completed">Completed</option>
+                            <option value="Partially">Partially</option>
+                            <option value="Not Completed">Not Completed</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select class="table-select task-penalty"><option value="0" selected>0</option><option value="N1000">N1000</option></select>
+                    </td>
+                    <td>
+                        <textarea class="table-textarea task-proof" rows="1"></textarea>
+                        <input type="file" accept="image/*" class="task-proof-file print-only-hide" style="margin-top: 5px; font-size: 12px; width: 100%;">
+                        <div class="proof-preview"></div>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+
+                tr.querySelector('.task-proof-file').addEventListener('change', function() {
+                    const previewContainer = tr.querySelector('.proof-preview');
+                    if (this.files[0]) {
+                        compressImage(this.files[0], (dataUrl) => {
+                            previewContainer.innerHTML = '<img src="' + dataUrl + '" style="max-width: 100%; max-height: 120px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;">';
+                        });
+                    }
+                });
+            }
+        } else if (count < currentRowCount) {
+            for (let i = currentRowCount; i > count; i--) tableBody.removeChild(tableBody.lastElementChild);
+        }
+    }
+});
+    </script>
+</body>
+</html>

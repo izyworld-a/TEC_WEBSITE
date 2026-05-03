@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <!-- HTML2PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        :root { --primary-color: #4a76c9; }
+        body { font-family: 'Inter', sans-serif; background: #f4f6fa; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        .dashboard-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;
+            background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .btn {
+            background-color: var(--primary-color); color: white; border: none; padding: 10px 20px;
+            font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block;
+        }
+        .btn.secondary { background-color: #2e8b57; }
+        
+        .submission-card {
+            background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); page-break-inside: avoid;
+        }
+        .submission-header {
+            display: flex; justify-content: space-between; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;
+        }
+        .submission-name { font-size: 20px; font-weight: 700; color: var(--primary-color); }
+        .submission-date { color: #666; font-size: 13px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px;}
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #fafafa; }
+        tr td:first-child { text-align: center; font-weight: bold; width: 40px;}
+        
+        .info-grid {
+            margin-top: 15px; display: grid; gap: 10px; background: #f9f9f9; padding: 15px; border-radius: 6px; border: 1px solid #eee; font-size: 14px;
+        }
+
+        /* Tabs */
+        .tabs-container { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { background: #fff; border: 1px solid #ddd; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; color: #666; transition: 0.2s; }
+        .tab-btn.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+        .tab-btn:hover:not(.active) { background: #f0f0f0; }
+
+        /* Modal */
+        .image-modal {
+            display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.8); justify-content: center; align-items: center;
+        }
+        .image-modal img { max-width: 90%; max-height: 90%; border-radius: 8px; }
+        .image-modal .close {
+            position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px; font-weight: bold; cursor: pointer;
+        }
+
+        /* Responsive Mobile Layout */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .dashboard-header { flex-direction: column; text-align: center; gap: 15px; }
+            .dashboard-header div { flex-direction: column; width: 100%; }
+            .btn { width: 100%; text-align: center; }
+            .tabs-container { flex-direction: column; }
+            .info-grid { grid-template-columns: 1fr; }
+            .submission-header { flex-direction: column; gap: 15px; align-items: stretch !important; }
+            .submission-header button { width: 100%; }
+            
+            /* Responsive Table */
+            table, thead, tbody, th, td, tr { display: block; }
+            thead tr { position: absolute; top: -9999px; left: -9999px; }
+            tr { border: 1px solid #ddd; margin-bottom: 10px; border-radius: 6px; }
+            td { border: none; border-bottom: 1px solid #eee; position: relative; padding-left: 30%; text-align: left !important; min-height: 40px; }
+            td:last-child { border-bottom: 0; }
+            td::before { 
+                position: absolute; top: 10px; left: 10px; width: 25%; 
+                font-weight: bold; text-align: left; 
+            }
+            td:nth-of-type(1)::before { content: "#"; }
+            td:nth-of-type(2)::before { content: "Task"; }
+            td:nth-of-type(3)::before { content: "Status"; }
+            td:nth-of-type(4)::before { content: "Penalty"; }
+            td:nth-of-type(5)::before { content: "Proof"; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Image Preview Modal -->
+    <div id="imageModal" class="image-modal" onclick="closeImageModal()">
+        <span class="close">&times;</span>
+        <img id="modalImage" src="">
+    </div>
+
+    <div class="container">
+        <div class="dashboard-header" data-html2canvas-ignore>
+            <h2>Review Dashboard</h2>
+            <div style="display:flex; gap: 10px;">
+                <a href="/TEC_Weekly_Goals_Form.html" class="btn">SET GOAL</a>
+                <button onclick="downloadPDF()" class="btn secondary">DOWNLOAD ALL AS PDF</button>
+            </div>
+        </div>
+
+        <div class="tabs-container" data-html2canvas-ignore>
+            <button id="tab-current" class="tab-btn active">Current Weekly Report</button>
+            <button id="tab-previous" class="tab-btn">Previous Reports</button>
+        </div>
+
+        <div id="loading" style="text-align:center; padding: 40px; color: #666;">
+            Connecting to Firebase to fetch reports...
+        </div>
+
+        <div id="submissions-list" style="padding: 10px; background: white; border-radius: 8px;">
+            <!-- Rendered Here -->
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDFLiw0xhfxKDftuPLEe_-FH10rDqvn3Rc",
+            authDomain: "tec-weekly-goals.firebaseapp.com",
+            projectId: "tec-weekly-goals",
+            storageBucket: "tec-weekly-goals.firebasestorage.app",
+            messagingSenderId: "682881802889",
+            appId: "1:682881802889:web:ce1760c069c1ad5bb01c58",
+            measurementId: "G-HV41WSHDHX"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let allSubmissions = [];
+        let currentTab = 'current';
+
+        document.getElementById('tab-current').addEventListener('click', () => switchTab('current'));
+        document.getElementById('tab-previous').addEventListener('click', () => switchTab('previous'));
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tab-current').classList.toggle('active', tab === 'current');
+            document.getElementById('tab-previous').classList.toggle('active', tab === 'previous');
+            renderSubmissions();
+        }
+
+        db.collection("submissions").orderBy("createdAt", "desc").onSnapshot((snapshot) => {
+            document.getElementById('loading').style.display = 'none';
+            allSubmissions = [];
+            snapshot.forEach((doc) => {
+                allSubmissions.push({ id: doc.id, ...doc.data() });
+            });
+            renderSubmissions();
+        }, (error) => {
+            console.error(error);
+            document.getElementById('loading').innerHTML = '<span style="color:red">Failed to read Firebase. Ensure you clicked "Create Database" in Firestore and set it to Test Mode rules!</span>';
+        });
+
+        function renderSubmissions() {
+            const list = document.getElementById('submissions-list');
+            list.innerHTML = '';
+            
+            let displayList = [];
+            if (currentTab === 'current') {
+                const userMap = new Map();
+                allSubmissions.forEach(sub => {
+                    const name = (sub.name || 'Anonymous User').trim().toLowerCase();
+                    if (!userMap.has(name)) {
+                        userMap.set(name, sub);
+                    }
+                });
+                displayList = Array.from(userMap.values());
+            } else {
+                displayList = allSubmissions;
+            }
+
+            if (displayList.length === 0) {
+                list.innerHTML = '<div style="text-align:center; padding: 40px;">No goals found.</div>';
+                return;
+            }
+
+            displayList.forEach((sub) => {
+                const card = document.createElement('div');
+                card.className = 'submission-card';
+                
+                let tasksHtml = sub.tasks.map(t => `
+                    <tr>
+                        <td>${t.goalNum}</td>
+                        <td>${t.taskDesc || ''}</td>
+                        <td style="text-align:center; font-weight:600;">${t.status || ''}</td>
+                        <td style="text-align:center;">${t.penalty || '0'}</td>
+                        <td>
+                            <div>${t.proofText || ''}</div>
+                            ${t.proofImage ? `<img src="${t.proofImage}" onclick="openImageModal('${t.proofImage}')" style="max-height: 50px; margin-top: 5px; border-radius: 4px; cursor: pointer; border: 1px solid #ccc;">` : ''}
+                        </td>
+                    </tr>
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="submission-header" style="align-items: flex-start;">
+                        <div>
+                            <div class="submission-name">${sub.name || 'Anonymous User'}</div>
+                            <div class="submission-date">
+                                <strong>Date field:</strong> ${sub.date} <br>
+                                <strong>Updates Used:</strong> ${sub.updateCount} / 2
+                            </div>
+                        </div>
+                        <button onclick="promptDelete('${sub.id}')" class="btn" style="background-color: #e74c3c; padding: 6px 12px; font-size: 12px;" data-html2canvas-ignore>Delete</button>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr><th>#</th><th>Task</th><th>Status</th><th>Penalty</th><th>Proof</th></tr>
+                        </thead>
+                        <tbody>${tasksHtml}</tbody>
+                    </table>
+
+                    <div class="info-grid">
+                        <div><strong>Completed goals?</strong> ${sub.completedGoal || 'N/A'}</div>
+                        <div><strong>What helped?</strong> ${sub.helped || ''}</div>
+                        <div><strong>What happened?</strong> ${sub.whatHappened || ''}</div>
+                        <div><strong>Next week:</strong> ${sub.differently || ''}</div>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function openImageModal(src) {
+            document.getElementById('modalImage').src = src;
+            document.getElementById('imageModal').style.display = 'flex';
+        }
+        function closeImageModal() {
+            document.getElementById('imageModal').style.display = 'none';
+        }
+
+        async function promptDelete(docId) {
+            const pin = prompt("Enter Admin Passcode to delete this report:");
+            if (pin === null) return; // User cancelled
+            
+            if (pin !== "7777") {
+                alert("Incorrect Admin Passcode!");
+                return;
+            }
+            
+            if (confirm("Are you sure you want to permanently delete this report? This cannot be undone.")) {
+                try {
+                    await db.collection("submissions").doc(docId).delete();
+                } catch (e) {
+                    console.error(e);
+                    alert("Failed to delete report.");
+                }
+            }
+        }
+
+        function downloadPDF() {
+            const element = document.getElementById('submissions-list');
+            const opt = {
+                margin:       [10, 10, 10, 10],   // Top, left, bottom, right
+                filename:     'Weekly_Admin_Report.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            
+            // Give user feedback
+            const btn = document.querySelector('.btn.secondary');
+            const ogText = btn.innerText;
+            btn.innerText = "Generating PDF... Please wait";
+            
+            html2pdf().set(opt).from(element).save().then(() => {
+                btn.innerText = ogText;
+            });
+        }
+    </script>
+</body>
+</html>
