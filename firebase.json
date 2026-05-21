@@ -1,6 +1,9 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
-    "public": ".",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -8,8 +11,8 @@
     ],
     "rewrites": [
       {
-        "source": "/",
-        "destination": "/TEC_Admin_Dashboard.html"
+        "source": "**",
+        "destination": "/index.html"
       }
     ]
   }
