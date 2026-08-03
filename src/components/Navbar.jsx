@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { doc, onSnapshot, collection, query, where, orderBy } from 'firebase/firestore';
-import { FiSun, FiMoon, FiLogOut, FiUser, FiSearch, FiBell, FiClock, FiMenu, FiX } from 'react-icons/fi';
+import { FiSun, FiMoon, FiLogOut, FiUser, FiSearch, FiBell, FiClock, FiMenu, FiX, FiDownload } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 
 export default function Navbar({ user, userData }) {
@@ -12,6 +12,8 @@ export default function Navbar({ user, userData }) {
   const location = useLocation();
   const isHome = location.pathname === '/';
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [weekSettings, setWeekSettings] = useState(null);
   const [timeLeft, setTimeLeft] = useState({ setup: null, completion: null });
@@ -27,6 +29,36 @@ export default function Navbar({ user, userData }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // PWA install prompt
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      setIsInstalled(true);
+    }
+    window.addEventListener('appinstalled', () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    });
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+      setIsInstalled(true);
+    }
+  };
 
   useEffect(() => {
     const weekId = getWeekId(new Date());
@@ -50,8 +82,8 @@ export default function Navbar({ user, userData }) {
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
-      const setup = weekSettings?.setupDeadline ? new Date(weekSettings.setupDeadline) : null;
-      const completion = weekSettings?.completionDeadline ? new Date(weekSettings.completionDeadline) : null;
+      const setup = weekSettings?.setupDeadline ? new Date(String(weekSettings.setupDeadline).replace(' ', 'T')) : null;
+      const completion = weekSettings?.completionDeadline ? new Date(String(weekSettings.completionDeadline).replace(' ', 'T')) : null;
 
       const calculateTimeLeft = (targetDate, now) => {
         const diff = targetDate - now;
@@ -108,7 +140,10 @@ export default function Navbar({ user, userData }) {
       justifyContent: 'space-between'
     }}>
       <div style={{ flexShrink: 0 }}>
-        <Link to="/" className="nav-brand" style={{ fontSize: '1.5rem', fontWeight: '800', textDecoration: 'none' }}>TEC Weekly</Link>
+        <Link to="/" className="nav-brand" style={{ fontSize: '1.5rem', fontWeight: '800', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <img src="/icons/icon-57x57.png" alt="TEC Logo" style={{ width: '32px', height: '32px', borderRadius: '8px', objectFit: 'contain' }} />
+          TEC Weekly
+        </Link>
       </div>
         
       {/* Desktop Centered Nav Links */}
@@ -180,6 +215,34 @@ export default function Navbar({ user, userData }) {
           {theme === 'light' ? <FiMoon size={20} /> : <FiSun size={20} />}
         </button>
 
+        {/* PWA Install Button - Desktop */}
+        {installPrompt && !isInstalled && (
+          <button
+            onClick={handleInstall}
+            className="desktop-only"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.4rem 0.9rem',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+              border: 'none',
+              color: 'white',
+              fontWeight: '700',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              boxShadow: '0 2px 12px rgba(99,102,241,0.4)',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 18px rgba(99,102,241,0.6)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 12px rgba(99,102,241,0.4)'; }}
+          >
+            <FiDownload size={14} />
+            Install App
+          </button>
+        )}
+
         {user ? (
           <div className="desktop-only" style={{ gap: '0.75rem', alignItems: 'center' }}>
             {!isHome && userData?.isAdmin && (
@@ -244,6 +307,28 @@ export default function Navbar({ user, userData }) {
               {userData?.isAdmin && <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Admin</Link>}
               {(userData?.isModerator || userData?.isAdmin) && <Link to="/moderator" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: '#a855f7', fontWeight: 'bold' }}>👤 Moderator</Link>}
               {userData?.status !== 'Pending' && <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Dashboard</Link>}
+              {installPrompt && !isInstalled && (
+                <button
+                  onClick={() => { handleInstall(); setIsMobileMenuOpen(false); }}
+                  style={{
+                    margin: '0.25rem 1rem',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                    border: 'none',
+                    color: 'white',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    fontSize: '1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 2px 12px rgba(99,102,241,0.4)'
+                  }}
+                >
+                  <FiDownload size={18} /> Install App
+                </button>
+              )}
               <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <FiLogOut size={18} /> Logout
               </button>

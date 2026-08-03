@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { 
   FiTarget, FiShield, FiCheckSquare, FiEye, FiActivity, FiGift,
-  FiUser, FiCalendar, FiAward, FiCheckCircle, FiClock, FiMail, FiPhone, FiMapPin
+  FiUser, FiCalendar, FiAward, FiCheckCircle, FiClock, FiMail, FiPhone, FiMapPin,
+  FiStar, FiTrendingUp
 } from 'react-icons/fi';
 
 export default function HomePage() {
@@ -44,25 +45,463 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div style={{ width: '100%', minHeight: '100vh', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ width: '100%', minHeight: '100vh', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
       
-      {/* Hero Section */}
-      <section id="home" className="fade-in hero-section" style={{ textAlign: 'center', maxWidth: '800px', margin: '0 auto' }}>
-        <p style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', marginBottom: '1rem', fontWeight: 'bold' }}>
-          Platform for Goal Management
-        </p>
-        <h1 className="hero-title" style={{ fontWeight: '900', marginBottom: '1rem', background: 'linear-gradient(to right, var(--text-main), var(--text-secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-        TEC Weekly
-        </h1>
-        <h3 style={{ fontSize: '1.5rem', fontWeight: '400', color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-          Professional Admin & Rewards System
-        </h3>
-        <p style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '3rem', lineHeight: '1.6' }}>
-          Set goals, track progress, and earn rewards with our sophisticated weekly planning, strict point system, and transparent admin review process.
-        </p>
-        <button onClick={handleGetStarted} className="btn btn-primary" style={{ padding: '1rem 2.5rem', fontSize: '1.1rem', borderRadius: '12px', fontWeight: 'bold', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-          Get Started
-        </button>
+      {/* Custom Styles for 3D Target, Floating Badges, and Spiral Notebook */}
+      <style>{`
+        /* Hero Section Grid */
+        .hero-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          align-items: center;
+          gap: 2rem;
+          padding: 5rem 2rem;
+          max-width: 1250px;
+          margin: 0 auto;
+          min-height: 85vh;
+          position: relative;
+        }
+        
+        @media (min-width: 1024px) {
+          .hero-grid {
+            grid-template-columns: 280px 1fr 340px;
+            gap: 3rem;
+          }
+        }
+
+        /* 3D Target Elements */
+        .target-wrapper {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          position: relative;
+          width: 100%;
+          height: 320px;
+        }
+
+        .target-container {
+          position: relative;
+          width: 230px;
+          height: 230px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transform-style: preserve-3d;
+          transform: perspective(800px) rotateY(-18deg) rotateX(12deg);
+          box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
+          transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+          background: linear-gradient(135deg, var(--bg-card), var(--border));
+          padding: 8px;
+        }
+
+        .target-container:hover {
+          transform: perspective(800px) rotateY(-8deg) rotateX(6deg) scale(1.05);
+        }
+
+        .target-ring-1 {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          border: 4px solid var(--border);
+          background: linear-gradient(135deg, var(--bg-card), var(--border));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: inset 0 2px 8px rgba(255, 255, 255, 0.15);
+        }
+
+        .target-ring-2 {
+          width: 78%;
+          height: 78%;
+          border-radius: 50%;
+          border: 3.5px solid var(--border);
+          background: linear-gradient(135deg, var(--border), var(--bg-main));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+
+        .target-ring-3 {
+          width: 54%;
+          height: 54%;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #1e1b4b, #312e81);
+          border: 1.5px solid rgba(255, 255, 255, 0.08);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.4);
+        }
+
+        .target-bullseye {
+          width: 32%;
+          height: 32%;
+          border-radius: 50%;
+          background: radial-gradient(circle, #38bdf8 0%, #3b82f6 60%, #1d4ed8 100%);
+          box-shadow: 0 0 22px rgba(56, 189, 248, 0.75), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+        }
+
+        /* High-tech Arrow */
+        .arrow-svg {
+          position: absolute;
+          width: 150px;
+          height: 150px;
+          top: -20px;
+          right: -30px;
+          transform: rotate(-5deg);
+          pointer-events: none;
+          z-index: 10;
+        }
+
+        /* Floating Badges */
+        .badge-trophy {
+          position: absolute;
+          top: 15px;
+          left: 10px;
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          background: rgba(99, 102, 241, 0.15);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1.5px solid rgba(99, 102, 241, 0.35);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6366f1;
+          box-shadow: 0 10px 20px rgba(99, 102, 241, 0.15);
+          animation: floatAnimation 4.2s ease-in-out infinite;
+        }
+
+        .badge-star {
+          position: absolute;
+          top: 60px;
+          right: 15px;
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          background: rgba(245, 158, 11, 0.15);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1.5px solid rgba(245, 158, 11, 0.35);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #f59e0b;
+          box-shadow: 0 10px 20px rgba(245, 158, 11, 0.15);
+          animation: floatAnimation 3.8s ease-in-out infinite 0.5s;
+        }
+
+        .badge-chart {
+          position: absolute;
+          bottom: 25px;
+          left: 30px;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: rgba(16, 185, 129, 0.15);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1.5px solid rgba(16, 185, 129, 0.35);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #10b981;
+          box-shadow: 0 10px 20px rgba(16, 185, 129, 0.15);
+          animation: floatAnimation 4.6s ease-in-out infinite 1s;
+        }
+
+        @keyframes floatAnimation {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-12px) rotate(3deg); }
+        }
+
+        /* Right Column Graphic Elements */
+        .right-graphics-wrapper {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+          width: 100%;
+        }
+
+        /* Spiral Planner Notebook */
+        .notebook-container {
+          position: relative;
+          width: calc(100% - 30px);
+          height: 180px;
+          margin-left: 20px;
+          transform-style: preserve-3d;
+          transform: perspective(900px) rotateY(-14deg) rotateX(8deg);
+          transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .notebook-container:hover {
+          transform: perspective(900px) rotateY(-4deg) rotateX(4deg) scale(1.02);
+        }
+
+        .notebook-cover {
+          width: 100%;
+          height: 100%;
+          border-radius: 4px 16px 16px 4px;
+          background: linear-gradient(135deg, #1e1b4b, #0f172a);
+          box-shadow: -6px 12px 28px rgba(0, 0, 0, 0.35);
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          border-left: 6px solid rgba(255, 255, 255, 0.05);
+          position: relative;
+        }
+
+        [data-theme='light'] .notebook-cover {
+          background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+          border-left: 6px solid rgba(0, 0, 0, 0.08);
+          box-shadow: -6px 12px 28px rgba(0, 0, 0, 0.15);
+        }
+
+        .notebook-title {
+          font-family: 'Inter', sans-serif;
+          font-weight: 300;
+          font-size: 1.15rem;
+          letter-spacing: 6px;
+          color: rgba(255, 255, 255, 0.7);
+          text-transform: uppercase;
+        }
+
+        [data-theme='light'] .notebook-title {
+          color: #475569;
+          font-weight: 500;
+        }
+
+        .notebook-spiral {
+          position: absolute;
+          left: -11px;
+          top: 15px;
+          bottom: 15px;
+          width: 16px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-around;
+          z-index: 10;
+        }
+
+        .spiral-ring {
+          width: 16px;
+          height: 7px;
+          background: linear-gradient(to bottom, #cbd5e1, #f8fafc, #64748b);
+          border-radius: 4px;
+          box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.25);
+        }
+
+        .silver-pen {
+          position: absolute;
+          right: -15px;
+          bottom: -5px;
+          width: 8px;
+          height: 140px;
+          background: linear-gradient(to right, #94a3b8, #f1f5f9, #475569);
+          border-radius: 4px;
+          transform: rotate(20deg);
+          box-shadow: 4px 6px 12px rgba(0, 0, 0, 0.3);
+          pointer-events: none;
+        }
+
+        /* Custom glow text and hero alignments */
+        .center-hero-text {
+          text-align: center;
+          z-index: 5;
+        }
+
+        .glow-button {
+          padding: 0.9rem 2.5rem;
+          font-size: 1.05rem;
+          border-radius: 30px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+          transition: all 0.3s ease;
+          background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+          border: none;
+          color: white;
+          cursor: pointer;
+        }
+
+        .glow-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 15px 30px rgba(99, 102, 241, 0.55);
+          background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
+        }
+
+        [data-theme='light'] .glow-button {
+          box-shadow: 0 10px 25px rgba(79, 70, 229, 0.25);
+        }
+
+        [data-theme='light'] .glow-button:hover {
+          box-shadow: 0 15px 30px rgba(79, 70, 229, 0.35);
+        }
+      `}</style>
+
+      {/* Responsive Header Hero Block */}
+      <section className="fade-in">
+        <div className="hero-grid">
+          
+          {/* Left Column: 3D Target Graphic */}
+          <div className="target-wrapper desktop-only">
+            <div className="badge-trophy">
+              <FiAward size={20} />
+            </div>
+            <div className="badge-star">
+              <FiStar size={18} fill="currentColor" />
+            </div>
+            <div className="badge-chart">
+              <FiTrendingUp size={18} />
+            </div>
+            
+            <div className="target-container">
+              <div className="target-ring-1">
+                <div className="target-ring-2">
+                  <div className="target-ring-3">
+                    <div className="target-bullseye"></div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Arrow SVG piercing target center */}
+              <svg className="arrow-svg" viewBox="0 0 100 100">
+                <defs>
+                  <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#38bdf8" />
+                    <stop offset="50%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#1d4ed8" />
+                  </linearGradient>
+                </defs>
+                {/* Shaft */}
+                <line x1="85" y1="15" x2="35" y2="65" stroke="url(#arrowGrad)" strokeWidth="4.5" strokeLinecap="round" />
+                {/* Arrowhead */}
+                <polygon points="32,68 44,65 35,56" fill="#38bdf8" />
+                {/* Fletching (Feathers) */}
+                <path d="M80,10 L92,15 L82,25 L75,20 Z" fill="#6366f1" opacity="0.85" />
+                <path d="M83,7 L90,8 L87,17 L80,16 Z" fill="#3b82f6" opacity="0.8" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Center Column: Typography & CTAs */}
+          <div className="center-hero-text">
+            <p style={{ 
+              fontSize: '0.8rem', 
+              textTransform: 'uppercase', 
+              letterSpacing: '2.5px', 
+              color: 'var(--primary)', 
+              marginBottom: '1rem', 
+              fontWeight: '700' 
+            }}>
+              Platform for Goal Management
+            </p>
+            <h1 className="hero-title" style={{ 
+              fontWeight: '900', 
+              marginBottom: '1rem', 
+              background: 'linear-gradient(135deg, var(--text-main) 30%, var(--text-secondary) 100%)', 
+              WebkitBackgroundClip: 'text', 
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '-1px'
+            }}>
+              TEC Weekly
+            </h1>
+            <h3 style={{ 
+              fontSize: '1.45rem', 
+              fontWeight: '500', 
+              color: 'var(--text-secondary)', 
+              marginBottom: '2rem',
+              letterSpacing: '0.2px'
+            }}>
+              Professional Admin & Rewards System
+            </h3>
+            <p style={{ 
+              fontSize: '1.05rem', 
+              color: 'var(--text-secondary)', 
+              marginBottom: '2.8rem', 
+              lineHeight: '1.65',
+              maxWidth: '560px',
+              margin: '0 auto 2.8rem'
+            }}>
+              Set goals, track progress, and earn rewards with our sophisticated weekly planning, strict point system, and transparent admin review process.
+            </p>
+            <button onClick={handleGetStarted} className="glow-button">
+              Get Started
+            </button>
+          </div>
+
+          {/* Right Column: Premium Visual Cards & Notebook */}
+          <div className="right-graphics-wrapper desktop-only">
+            
+            {/* Glass Weekly Progress Card */}
+            <div className="glass-panel" style={{ padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '700', marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', letterSpacing: '0.5px' }}>
+                WEEKLY PROGRESS <FiActivity color="#38bdf8" />
+              </div>
+              <svg viewBox="0 0 300 95" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
+                <defs>
+                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity="0"/>
+                  </linearGradient>
+                </defs>
+                {/* Horizontal grid guide */}
+                <line x1="0" y1="20" x2="300" y2="20" stroke="var(--border)" strokeWidth="0.75" strokeDasharray="4 4" />
+                <line x1="0" y1="60" x2="300" y2="60" stroke="var(--border)" strokeWidth="0.75" strokeDasharray="4 4" />
+                {/* Area fill */}
+                <path d="M0,80 Q40,30 85,55 T160,20 T235,50 T300,10 L300,95 L0,95 Z" fill="url(#chartGradient)" />
+                {/* Main line */}
+                <path d="M0,80 Q40,30 85,55 T160,20 T235,50 T300,10" fill="none" stroke="var(--primary)" strokeWidth="3" strokeLinecap="round" />
+                {/* Glow dot nodes */}
+                <circle cx="85" cy="55" r="4.5" fill="var(--primary)" stroke="var(--bg-card)" strokeWidth="2" />
+                <circle cx="160" cy="20" r="4.5" fill="var(--primary)" stroke="var(--bg-card)" strokeWidth="2" />
+                <circle cx="300" cy="10" r="4.5" fill="#38bdf8" stroke="var(--bg-card)" strokeWidth="2" />
+              </svg>
+            </div>
+
+            {/* Goals Overview Circular Card */}
+            <div className="glass-panel" style={{ padding: '1.15rem', borderRadius: '16px', border: '1px solid var(--glass-border)', display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
+              <div style={{ position: 'relative', width: '72px', height: '72px', flexShrink: 0 }}>
+                <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border)" strokeWidth="8" />
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="var(--primary)" strokeWidth="8" strokeDasharray="251.2" strokeDashoffset="62.8" strokeLinecap="round" />
+                </svg>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: '800' }}>75%</span>
+                  <span style={{ fontSize: '0.45rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: '600' }}>Done</span>
+                </div>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '0.2rem' }}>Goals Overview</div>
+                {['Goal Setting', 'Progress Tracking', 'Weekly Review', 'Rewards'].map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    <FiCheckCircle size={10} color="#3b82f6" fill="rgba(59, 130, 246, 0.1)" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 3D Spiral Planner Notebook & Pen */}
+            <div className="notebook-container">
+              <div className="notebook-spiral">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="spiral-ring" />
+                ))}
+              </div>
+              <div className="notebook-cover">
+                <span className="notebook-title">Planning</span>
+              </div>
+              <div className="silver-pen" />
+            </div>
+
+          </div>
+
+        </div>
       </section>
 
       {/* Stats Section */}

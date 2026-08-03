@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import {
   collection, query, onSnapshot, doc, updateDoc,
-  addDoc, serverTimestamp, setDoc, increment, where, deleteDoc, orderBy
+  addDoc, serverTimestamp, setDoc, increment, where, deleteDoc, orderBy, limit, getDocs
 } from 'firebase/firestore';
-import { FiUsers, FiDollarSign, FiClock, FiCheckCircle, FiXCircle, FiFileText, FiSettings, FiTrash2, FiBell } from 'react-icons/fi';
+import { FiUsers, FiDollarSign, FiClock, FiCheckCircle, FiXCircle, FiFileText, FiSettings, FiTrash2, FiBell, FiStar } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 
 export default function AdminDashboard() {
@@ -30,6 +30,11 @@ export default function AdminDashboard() {
 
   // System Wallet state
   const [systemWallet, setSystemWallet] = useState(0);
+
+  // Accountability pairings state
+  const [pairings, setPairings] = useState([]);
+  const [partnerAId, setPartnerAId] = useState('');
+  const [partnerBId, setPartnerBId] = useState('');
   
   // Get current weekId (Mon–Sun)
   const currentWeekId = getWeekId(new Date());
@@ -76,6 +81,11 @@ export default function AdminDashboard() {
       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
+    // Listen to weekly pairings
+    const unsubPairings = onSnapshot(query(collection(db, 'weekly_pairings'), where('weekId', '==', currentWeekId)), (snap) => {
+      setPairings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
     return () => { 
       unsubUsers(); 
       unsubSessions(); 
@@ -83,6 +93,7 @@ export default function AdminDashboard() {
       unsubSettings(); 
       unsubAnnouncements(); 
       unsubSystemWallet();
+      unsubPairings();
     };
   }, [currentWeekId]);
 
@@ -226,6 +237,74 @@ export default function AdminDashboard() {
     await updateDoc(doc(db, 'users', userId), {
       walletBalance: (currentBalance || 0) + parseInt(amount)
     });
+  };
+
+  const handleDeductWallet = async (userId, currentBalance) => {
+    const amount = prompt('Enter amount to DEDUCT from wallet (₦):');
+    if (!amount || isNaN(amount)) return;
+    const parsedAmount = parseInt(amount, 10);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert('Please enter a valid positive number to deduct.');
+      return;
+    }
+    try {
+      const startBalance = currentBalance || 0;
+      const newBalance = Math.max(0, startBalance - parsedAmount);
+      const actualDeducted = startBalance - newBalance;
+
+      await updateDoc(doc(db, 'users', userId), {
+        walletBalance: newBalance
+      });
+
+      if (actualDeducted > 0) {
+        await setDoc(doc(db, 'system_data', 'wallet'), { adminBalance: increment(actualDeducted) }, { merge: true });
+      }
+
+      alert(`Successfully deducted ₦${actualDeducted} from user's wallet and added to system revenue.`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to deduct from wallet.');
+    }
+  };
+
+  const handleAwardPoints = async (userId, currentPoints) => {
+    const amount = prompt('Enter amount of points to award (can be negative to deduct):');
+    if (amount === null || amount === '') return;
+    
+    const parsedAmount = parseInt(amount, 10);
+    if (isNaN(parsedAmount)) {
+      alert('Please enter a valid number.');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        totalPoints: (currentPoints || 0) + parsedAmount
+      });
+      alert(`Successfully updated user's points by ${parsedAmount}.`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to award points.');
+    }
+  };
+
+  const handleDeductPoints = async (userId, currentPoints) => {
+    const amount = prompt('Enter amount of points to DEDUCT:');
+    if (amount === null || amount === '') return;
+    const parsedAmount = parseInt(amount, 10);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert('Please enter a valid positive number to deduct.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        totalPoints: Math.max(0, (currentPoints || 0) - parsedAmount)
+      });
+      alert(`Successfully deducted ${parsedAmount} points from user.`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to deduct points.');
+    }
   };
 
   const handleApproveBreak = async (userId) => {
@@ -434,6 +513,120 @@ export default function AdminDashboard() {
       console.error('Reset error:', err);
       alert('Error resetting user.');
     }
+  };  // ── Accountability Partners Pairing ─────────────────────────────────────────
+  const handleManualPairing = async (e) => {
+    e.preventDefault();
+    if (!partnerAId || !partnerBId) {
+      alert('Please select both members to pair.');
+      return;
+    }
+    if (partnerAId === partnerBId) {
+      alert('Cannot pair a member with themselves.');
+      return;
+    }
+
+    // Check if either partner is already paired this week
+    const alreadyPairedA = pairings.some(p => p.userIds?.includes(partnerAId));
+    const alreadyPairedB = pairings.some(p => p.userIds?.includes(partnerBId));
+    if (alreadyPairedA || alreadyPairedB) {
+      alert('One or both selected members are already paired. Please unpair them first.');
+      return;
+    }
+
+    const userA = users.find(u => u.id === partnerAId);
+    const userB = users.find(u => u.id === partnerBId);
+
+    try {
+      await addDoc(collection(db, 'weekly_pairings'), {
+        weekId: currentWeekId,
+        userIds: [partnerAId, partnerBId],
+        userNames: [userA?.name || userA?.email || 'Anonymous A', userB?.name || userB?.email || 'Anonymous B'],
+        createdAt: serverTimestamp()
+      });
+      setPartnerAId('');
+      setPartnerBId('');
+      alert('Accountability partners successfully paired!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to create pairing.');
+    }
+  };
+
+  const handleDeletePairing = async (pairingId) => {
+    if (!window.confirm('Are you sure you want to delete this pairing?')) return;
+    try {
+      await deleteDoc(doc(db, 'weekly_pairings', pairingId));
+      alert('Pairing deleted.');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete pairing.');
+    }
+  };
+
+  const handleAutoPairing = async () => {
+    // All active/warning members (including admins) are eligible for pairing
+    const eligibleUsers = users.filter(u =>
+      (u.status === 'Active' || u.status === 'Warning')
+    );
+
+    if (eligibleUsers.length < 2) {
+      alert('Not enough active/warning members (need at least 2) to perform auto-pairing.');
+      return;
+    }
+
+    if (!window.confirm(`Auto-pairing will randomly pair all ${eligibleUsers.length} eligible active members for week ${currentWeekId}. This will delete all existing pairings for this week. Proceed?`)) {
+      return;
+    }
+
+    try {
+      // 1. Delete existing pairings for this week
+      const currentWeekPairings = pairings.filter(p => p.weekId === currentWeekId);
+      for (const p of currentWeekPairings) {
+        await deleteDoc(doc(db, 'weekly_pairings', p.id));
+      }
+
+      // 2. Shuffle eligible users
+      const shuffled = [...eligibleUsers].sort(() => Math.random() - 0.5);
+
+      // 3. Group them
+      const newPairings = [];
+      let i = 0;
+      while (i < shuffled.length) {
+        // If we have 3 remaining and it is odd, group the last 3 together
+        const remaining = shuffled.length - i;
+        if (remaining === 3) {
+          newPairings.push(shuffled.slice(i, i + 3));
+          break;
+        } else if (remaining === 1) {
+          // This case only happens if we had 1 member to begin with (handled above)
+          // or we just have a leftover. We append to the last pair to make a group of 3.
+          if (newPairings.length > 0) {
+            newPairings[newPairings.length - 1].push(shuffled[i]);
+          } else {
+            newPairings.push([shuffled[i]]);
+          }
+          break;
+        } else {
+          newPairings.push(shuffled.slice(i, i + 2));
+          i += 2;
+        }
+      }
+
+      // 4. Save to Firestore
+      for (const group of newPairings) {
+        await addDoc(collection(db, 'weekly_pairings'), {
+          weekId: currentWeekId,
+          userIds: group.map(u => u.id),
+          userNames: group.map(u => u.name || u.email || 'Anonymous'),
+          createdAt: serverTimestamp()
+        });
+      }
+
+      alert(`Successfully generated and saved ${newPairings.length} pairings!`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed during auto-pairing process.');
+    }
   };
 
 
@@ -495,6 +688,9 @@ export default function AdminDashboard() {
           });
           alert(`Early Bird Completion! ${goalDoc.userName} is the first to finish all goals. +3 bonus points awarded.`);
         }
+
+        // ── Auto-check Team Reward after full completion ──
+        await checkAndAwardTeamReward({ ...goalDoc, tasks: updatedTasks });
       }
     }
 
@@ -504,6 +700,148 @@ export default function AdminDashboard() {
         totalPoints: increment(1)
       });
     }
+  };
+
+  // ── Team Reward: Top-3 Paired Users get ₦1,000 each ─────────────────────────
+  // "Top 3" = first 3 users to BOTH set goals early (submittedAt) AND complete all
+  // 3 compulsory tasks with admin approval. If both paired users are in the top 3,
+  // each receives ₦1,000 from the system wallet.
+  const checkAndAwardTeamReward = async (goalDoc) => {
+    const weekId = goalDoc.weekId || currentWeekId;
+
+    // 1. Fetch all weekly_goals for this week
+    const weekGoalsSnap = await getDocs(
+      query(collection(db, 'weekly_goals'), where('weekId', '==', weekId))
+    );
+
+    // 2. Filter: only those who have all 3 compulsory tasks approved & completed
+    const getTime = (ts) => {
+      if (!ts) return Infinity;
+      if (typeof ts.toMillis === 'function') return ts.toMillis();
+      return new Date(ts).getTime();
+    };
+
+    const fullyCompleted = weekGoalsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(g => {
+        if (!g.tasks || g.tasks.length < 3) return false;
+        return g.tasks.every(t => t.reviewed && t.adminAction === 'approved' && t.status === 'Completed');
+      })
+      .sort((a, b) => getTime(a.submittedAt) - getTime(b.submittedAt)); // sort by who set goals first
+
+    // 3. Top 3 fully-completed users (earliest to set + complete)
+    const top3UserIds = new Set(fullyCompleted.slice(0, 3).map(g => g.userId));
+
+    // 4. Check if the current user is in top 3
+    if (!top3UserIds.has(goalDoc.userId)) return;
+
+    // 5. Find this user's pairing for the week
+    const pairSnap = await getDocs(
+      query(
+        collection(db, 'weekly_pairings'),
+        where('weekId', '==', weekId),
+        where('userIds', 'array-contains', goalDoc.userId)
+      )
+    );
+    if (pairSnap.empty) return;
+
+    const pairingDoc = { id: pairSnap.docs[0].id, ...pairSnap.docs[0].data() };
+
+    // 6. Guard: already rewarded
+    if (pairingDoc.teamRewarded) return;
+
+    // 7. Check if the partner is also in top 3
+    const partnerId = pairingDoc.userIds.find(id => id !== goalDoc.userId);
+    if (!partnerId || !top3UserIds.has(partnerId)) return;
+
+    // 8. Both are in top 3 → award ₦1,000 each
+    const REWARD = 1000;
+    const partnerName = pairingDoc.userNames?.find(n => n !== goalDoc.userName) || 'Partner';
+
+    try {
+      await updateDoc(doc(db, 'users', goalDoc.userId), { walletBalance: increment(REWARD) });
+      await updateDoc(doc(db, 'users', partnerId), { walletBalance: increment(REWARD) });
+
+      // Deduct from system wallet
+      const walletSnap = await getDocs(query(collection(db, 'system_data')));
+      await setDoc(doc(db, 'system_data', 'wallet'), { adminBalance: increment(-(REWARD * 2)) }, { merge: true });
+
+      // Mark pairing as rewarded
+      await updateDoc(doc(db, 'weekly_pairings', pairingDoc.id), {
+        teamRewarded: true,
+        rewardedAt: serverTimestamp(),
+        rewardAmount: REWARD,
+        rewardedUserIds: [goalDoc.userId, partnerId]
+      });
+
+      alert(`🏆 TEAM REWARD! ${goalDoc.userName} & ${partnerName} are BOTH in the Top 3!\n₦${REWARD.toLocaleString()} has been added to each partner\'s wallet.`);
+    } catch (err) {
+      console.error('Team reward error:', err);
+      alert('Error awarding team reward. Please check console.');
+    }
+  };
+
+  // ── Manual: Award Team Rewards for current week ───────────────────────────
+  const handleAwardAllTeamRewards = async () => {
+    if (!window.confirm('Manually check and award ₦1,000 team rewards for all qualifying Top-3 pairs this week?')) return;
+
+    const weekId = currentWeekId;
+
+    const weekGoalsSnap = await getDocs(
+      query(collection(db, 'weekly_goals'), where('weekId', '==', weekId))
+    );
+
+    const getTime = (ts) => {
+      if (!ts) return Infinity;
+      if (typeof ts.toMillis === 'function') return ts.toMillis();
+      return new Date(ts).getTime();
+    };
+
+    const fullyCompleted = weekGoalsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(g => {
+        if (!g.tasks || g.tasks.length < 3) return false;
+        return g.tasks.every(t => t.reviewed && t.adminAction === 'approved' && t.status === 'Completed');
+      })
+      .sort((a, b) => getTime(a.submittedAt) - getTime(b.submittedAt));
+
+    const top3UserIds = new Set(fullyCompleted.slice(0, 3).map(g => g.userId));
+
+    if (top3UserIds.size === 0) {
+      alert('No fully-completed users this week yet.');
+      return;
+    }
+
+    const pairSnap = await getDocs(
+      query(collection(db, 'weekly_pairings'), where('weekId', '==', weekId))
+    );
+
+    const REWARD = 1000;
+    let awarded = 0;
+    let skipped = 0;
+
+    for (const pDoc of pairSnap.docs) {
+      const pairing = { id: pDoc.id, ...pDoc.data() };
+      if (pairing.teamRewarded) { skipped++; continue; }
+
+      const [idA, idB] = pairing.userIds || [];
+      if (!idA || !idB) continue;
+
+      if (top3UserIds.has(idA) && top3UserIds.has(idB)) {
+        await updateDoc(doc(db, 'users', idA), { walletBalance: increment(REWARD) });
+        await updateDoc(doc(db, 'users', idB), { walletBalance: increment(REWARD) });
+        await setDoc(doc(db, 'system_data', 'wallet'), { adminBalance: increment(-(REWARD * 2)) }, { merge: true });
+        await updateDoc(doc(db, 'weekly_pairings', pairing.id), {
+          teamRewarded: true,
+          rewardedAt: serverTimestamp(),
+          rewardAmount: REWARD,
+          rewardedUserIds: [idA, idB]
+        });
+        awarded++;
+      }
+    }
+
+    alert(`Done! ${awarded} pair(s) rewarded (₦${(awarded * REWARD * 2).toLocaleString()} total paid out). ${skipped} pair(s) already rewarded.`);
   };
 
   // ── Goal Review: Reject (Keep editable for user) ──────────────────────────
@@ -839,6 +1177,10 @@ export default function AdminDashboard() {
           👤 Moderator
           {weekSettings?.moderatorUserId && <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '10px', height: '10px', background: '#10b981', borderRadius: '50%', border: '2px solid var(--bg-main)' }} />}
         </button>
+        <button onClick={() => setActiveTab('partners')} className={`btn ${activeTab === 'partners' ? 'btn-primary' : 'btn-secondary'}`} style={{ position: 'relative' }}>
+          🤝 Accountability Pairs
+          {pairings.length > 0 && <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--secondary)', color: 'white', borderRadius: '50%', width: '18px', height: '18px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{pairings.length}</span>}
+        </button>
         <div style={{ flex: 1 }} />
         <button onClick={handleEvaluateWeek} className="btn btn-danger">
           Run Weekly Evaluation
@@ -1127,8 +1469,17 @@ export default function AdminDashboard() {
                     <td style={{ padding: '1rem' }}>{u.totalPoints || 0}</td>
                     <td style={{ padding: '1rem' }}>
                       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <button className="btn btn-secondary" onClick={() => handleFundWallet(u.id, u.walletBalance)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>
+                        <button className="btn btn-secondary" onClick={() => handleFundWallet(u.id, u.walletBalance)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} title="Fund Wallet">
                           <FiDollarSign /> Fund
+                        </button>
+                        <button className="btn btn-secondary" onClick={() => handleDeductWallet(u.id, u.walletBalance)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', color: 'var(--danger)', borderColor: 'var(--danger)' }} title="Deduct Wallet">
+                          <FiDollarSign /> Deduct
+                        </button>
+                        <button className="btn btn-secondary" onClick={() => handleAwardPoints(u.id, u.totalPoints)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} title="Award Points">
+                          <FiStar /> Award
+                        </button>
+                        <button className="btn btn-secondary" onClick={() => handleDeductPoints(u.id, u.totalPoints)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', color: 'var(--danger)', borderColor: 'var(--danger)' }} title="Deduct Points">
+                          <FiStar /> Deduct Pts
                         </button>
 
                         {/* Break Request */}
@@ -1206,7 +1557,10 @@ export default function AdminDashboard() {
             <p style={{ color: 'var(--text-secondary)' }}>No goal submissions yet.</p>
           )}
 
-          {goalDocs.map(g => (
+          {(() => {
+            const currentGoals = goalDocs.filter(g => g.weekId === currentWeekId);
+            const prevGoals = goalDocs.filter(g => g.weekId !== currentWeekId);
+            const renderGoal = g => (
             <div key={g.id} style={{ marginBottom: '2rem', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
               {/* Submission Header */}
               <div style={{ background: 'rgba(255,255,255,0.04)', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -1331,7 +1685,24 @@ export default function AdminDashboard() {
                 </table>
               </div>
             </div>
-          ))}
+            );
+            return (
+              <>
+                {currentGoals.length > 0 && (
+                  <div style={{ marginBottom: '3rem' }}>
+                    <h3 style={{ marginBottom: '1.5rem', color: 'var(--primary)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Current Week ({currentWeekId})</h3>
+                    {currentGoals.map(renderGoal)}
+                  </div>
+                )}
+                {prevGoals.length > 0 && (
+                  <div>
+                    <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Previous Weeks</h3>
+                    {prevGoals.map(renderGoal)}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -1448,6 +1819,171 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* ── Accountability Partner Pairing ── */}
+      {activeTab === 'partners' && (() => {
+        // Find users eligible for pairing (active or warning) — admins included
+        // All active/warning members including admins are eligible for pairing
+        const eligibleUsers = users.filter(u => (u.status === 'Active' || u.status === 'Warning'));
+        
+        // Find users that are not yet paired
+        const pairedUserIds = pairings.flatMap(p => p.userIds || []);
+        const unpairedUsers = eligibleUsers.filter(u => !pairedUserIds.includes(u.id));
+
+        return (
+          <div className="glass-panel" style={{ padding: '2rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'linear-gradient(135deg, #10b981, #06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem' }}>🤝</div>
+              <div>
+                <h2 style={{ margin: 0 }}>Weekly Accountability Partner Pairing</h2>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Pair members in twos (or threes if odd) for weekly check-ins and performance tracking.</p>
+              </div>
+            </div>
+
+            {/* Auto Pairing Controls */}
+            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <strong style={{ fontSize: '1.05rem', color: '#10b981' }}>Automatic Random Pairing</strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Shuffles all active/warning members and groups them. Will overwrite current pairings.</p>
+              </div>
+              <button onClick={handleAutoPairing} className="btn btn-primary" style={{ background: '#10b981', border: 'none', color: 'white', fontWeight: 'bold', padding: '0.6rem 1.25rem' }}>
+                ⚡ Auto-Pair Active Members
+              </button>
+            </div>
+
+            {/* Team Reward Controls */}
+            <div style={{ background: 'rgba(234,179,8,0.07)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <strong style={{ fontSize: '1.05rem', color: '#eab308' }}>🏆 Top-3 Team Rewards</strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Checks which pairs are <strong>both in the Top 3</strong> (first to set goals &amp; complete all 3 tasks).
+                  Qualifying pairs each receive <strong>₦1,000</strong> from the system wallet. Auto-awarded when tasks are approved, or trigger manually.
+                </p>
+                <p style={{ margin: '6px 0 0 0', fontSize: '0.78rem', color: 'rgba(234,179,8,0.8)', fontStyle: 'italic' }}>
+                  ⚠️ Reward is locked to pairs where BOTH users are in the Top 3. No reward if only one qualifies.
+                </p>
+              </div>
+              <button
+                onClick={handleAwardAllTeamRewards}
+                className="btn btn-primary"
+                style={{ background: 'linear-gradient(135deg, #eab308, #f59e0b)', border: 'none', color: '#1a1a1a', fontWeight: 'bold', padding: '0.6rem 1.25rem', whiteSpace: 'nowrap' }}
+              >
+                🏆 Award Team Rewards
+              </button>
+            </div>
+
+            {/* Manual Pairing */}
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem' }}>Manual Pairing</h3>
+              <form onSubmit={handleManualPairing} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div className="input-group" style={{ margin: 0, flex: 1, minWidth: '200px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Partner A</label>
+                  <select className="input-field" value={partnerAId} onChange={(e) => setPartnerAId(e.target.value)}>
+                    <option value="">-- Select Member --</option>
+                    {unpairedUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.name || u.email} ({u.status})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="input-group" style={{ margin: 0, flex: 1, minWidth: '200px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Partner B</label>
+                  <select className="input-field" value={partnerBId} onChange={(e) => setPartnerBId(e.target.value)}>
+                    <option value="">-- Select Member --</option>
+                    {unpairedUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.name || u.email} ({u.status})</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ height: '42px', padding: '0.5rem 1.5rem' }}>
+                  Pair Selected
+                </button>
+              </form>
+            </div>
+
+            {/* Pairings List */}
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1rem' }}>Current Weekly Pairings ({currentWeekId})</h3>
+            {pairings.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', border: '1px dashed var(--border)', borderRadius: '12px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                No pairings generated for this week yet. Use the Auto-Pair tool or pair members manually above.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                {pairings.map(p => {
+                  return (
+                    <div key={p.id} style={{
+                      display: 'flex', flexDirection: 'column', padding: '1.25rem',
+                      border: p.teamRewarded ? '1px solid rgba(234,179,8,0.4)' : '1px solid var(--border)',
+                      borderRadius: '16px',
+                      background: p.teamRewarded ? 'rgba(234,179,8,0.05)' : 'rgba(255,255,255,0.02)',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: '700', textTransform: 'uppercase' }}>
+                              {p.userIds?.length === 3 ? 'Three-way Pairing' : 'Accountability Duo'}
+                            </span>
+                            {/* Reward status badge */}
+                            {p.teamRewarded ? (
+                              <span style={{
+                                fontSize: '0.65rem', fontWeight: '800', padding: '2px 8px',
+                                borderRadius: '20px', background: 'rgba(234,179,8,0.2)',
+                                color: '#eab308', border: '1px solid rgba(234,179,8,0.4)',
+                                whiteSpace: 'nowrap'
+                              }}>🏆 ₦{(p.rewardAmount || 1000).toLocaleString()} Rewarded</span>
+                            ) : (
+                              <span style={{
+                                fontSize: '0.65rem', fontWeight: '700', padding: '2px 8px',
+                                borderRadius: '20px', background: 'rgba(255,255,255,0.04)',
+                                color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.08)'
+                              }}>⏳ Pending</span>
+                            )}
+                          </div>
+                          <button onClick={() => handleDeletePairing(p.id)} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                            Delete
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          {p.userIds?.map(uid => {
+                            const u = users.find(usr => usr.id === uid);
+                            // Check if this user is in top 3 completed this week
+                            const userGoal = goalDocs.find(g => g.userId === uid && g.weekId === currentWeekId);
+                            const isFullyDone = userGoal?.tasks?.slice(0,3).every(t => t.reviewed && t.adminAction === 'approved' && t.status === 'Completed');
+                            return (
+                              <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                {u?.profilePicUrl ? (
+                                  <img src={u.profilePicUrl} alt={u.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: isFullyDone ? '2px solid #10b981' : '2px solid transparent' }} />
+                                ) : (
+                                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: isFullyDone ? 'rgba(16,185,129,0.15)' : 'rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold', color: isFullyDone ? '#10b981' : 'var(--primary)', border: isFullyDone ? '2px solid #10b981' : '2px solid transparent' }}>
+                                    {(u?.name || 'A').charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: '600', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {u?.name || u?.email || 'Anonymous'}
+                                    {isFullyDone && <span title="All tasks completed & approved" style={{ fontSize: '0.7rem', color: '#10b981' }}>✓ Done</span>}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{u?.profession || u?.email}</div>
+                                </div>
+                                <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#6366f1' }}>₦{(u?.walletBalance || 0).toLocaleString()}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {p.teamRewarded && p.rewardedAt && (
+                          <div style={{ marginTop: '0.75rem', fontSize: '0.7rem', color: 'rgba(234,179,8,0.6)', borderTop: '1px solid rgba(234,179,8,0.15)', paddingTop: '0.5rem' }}>
+                            Rewarded {p.rewardedAt?.toDate ? new Date(p.rewardedAt.toDate()).toLocaleString() : 'recently'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

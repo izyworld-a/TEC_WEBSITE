@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot, where, doc } from 'firebase/firestore';
-import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser } from 'react-icons/fi';
+import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser, FiDollarSign } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 
-export default function LiveFeedPage() {
+export default function LiveFeedPage({ user, userData }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [liveFeed, setLiveFeed] = useState([]);
   const [allGoals, setAllGoals] = useState([]);
@@ -12,6 +12,12 @@ export default function LiveFeedPage() {
   const [topPerformer, setTopPerformer] = useState(null);
   const [usersMap, setUsersMap] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
+  
+  const [pairings, setPairings] = useState([]);
+  const [myPairing, setMyPairing] = useState(null);
+  const [systemWallet, setSystemWallet] = useState(0);
+  const [showPartnerModal, setShowPartnerModal] = useState(false);
+  const [partnerDismissed, setPartnerDismissed] = useState(false);
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const currentWeekId = getWeekId(new Date());
@@ -94,11 +100,34 @@ export default function LiveFeedPage() {
     return () => unsubscribeUsers();
   }, []);
 
+  // Listen to current user's pairing for this week
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, 'weekly_pairings'),
+      where('weekId', '==', currentWeekId),
+      where('userIds', 'array-contains', user.uid)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      if (!snap.empty) {
+        const doc = snap.docs[0];
+        setMyPairing({ id: doc.id, ...doc.data() });
+        // Show partner notification once (if not dismissed)
+        if (!snap.docs[0].data().teamRewarded) {
+          setShowPartnerModal(true);
+        }
+      } else {
+        setMyPairing(null);
+      }
+    });
+    return () => unsub();
+  }, [user?.uid, currentWeekId]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
-      const setup = weekSettings?.setupDeadline ? new Date(weekSettings.setupDeadline) : null;
-      const completion = weekSettings?.completionDeadline ? new Date(weekSettings.completionDeadline) : null;
+      const setup = weekSettings?.setupDeadline ? new Date(String(weekSettings.setupDeadline).replace(' ', 'T')) : null;
+      const completion = weekSettings?.completionDeadline ? new Date(String(weekSettings.completionDeadline).replace(' ', 'T')) : null;
 
       setTimeLeft({
         setup: setup ? calculateTimeLeft(setup, now) : null,
@@ -185,6 +214,162 @@ export default function LiveFeedPage() {
           </div>
         ))}
       </div>
+      {/* ── Partner Assignment Popup ── */}
+      {myPairing && showPartnerModal && !partnerDismissed && !myPairing.teamRewarded && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+          zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{
+            background: 'var(--bg-card)',
+            maxWidth: '440px', width: '100%', padding: '2.5rem 2rem',
+            borderRadius: '24px', textAlign: 'center', position: 'relative',
+            border: '1px solid rgba(99,102,241,0.4)',
+            boxShadow: '0 0 60px rgba(99,102,241,0.2)'
+          }}>
+            <button
+              onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
+              style={{ position: 'absolute', top: '1rem', right: '1.25rem', background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}
+            >&times;</button>
+
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤝</div>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '0.5rem' }}>You've Been Paired!</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              Your accountability partner{myPairing.userIds?.length > 2 ? 's are' : ' is'}:
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
+              {myPairing.userIds?.filter(id => id !== user?.uid).map((partnerId, i) => {
+                const partnerInfo = usersMap[partnerId];
+                const partnerName = myPairing.userNames?.[myPairing.userIds.indexOf(partnerId)] || partnerInfo?.name || 'Teammate';
+                return (
+                  <div key={partnerId} style={{
+                    display: 'flex', alignItems: 'center', gap: '1rem',
+                    background: 'rgba(99,102,241,0.1)', borderRadius: '14px',
+                    padding: '0.875rem 1.25rem', border: '1px solid rgba(99,102,241,0.2)'
+                  }}>
+                    {partnerInfo?.profilePicUrl ? (
+                      <img src={partnerInfo.profilePicUrl} alt={partnerName} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
+                    ) : (
+                      <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold', flexShrink: 0 }}>
+                        {partnerName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontWeight: '700', fontSize: '1rem' }}>{partnerName}</div>
+                      {partnerInfo?.profession && <div style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>{partnerInfo.profession}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '12px', padding: '0.875rem 1rem', fontSize: '0.85rem', color: 'rgba(234,179,8,0.9)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              🏆 If you <strong>both</strong> rank in the <strong>Top 3</strong> to set and complete your goals this week, you each earn <strong>₦1,000!</strong>
+            </div>
+
+            <button
+              onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
+              className="btn btn-primary"
+              style={{ width: '100%', padding: '0.875rem', fontWeight: '700', fontSize: '1rem' }}
+            >
+              Got it — Let's Go! 🚀
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Team Rank & Reward Banner ── */}
+      {(() => {
+        if (!user?.uid || !myPairing) return null;
+
+        // Build sorted completion ranking from live feed
+        const getTime = (ts) => {
+          if (!ts) return Infinity;
+          if (typeof ts.toMillis === 'function') return ts.toMillis();
+          return new Date(ts).getTime();
+        };
+
+        const fullyCompleted = allGoals
+          .filter(g => {
+            if (!g.tasks || g.tasks.length < 3) return false;
+            return g.tasks.every(t => t.reviewed && t.adminAction === 'approved' && t.status === 'Completed');
+          })
+          .sort((a, b) => getTime(a.submittedAt) - getTime(b.submittedAt));
+
+        const myRank = fullyCompleted.findIndex(g => g.userId === user.uid) + 1; // 0 = not yet
+        const partnerIds = myPairing.userIds?.filter(id => id !== user.uid) || [];
+        const partnerRanks = partnerIds.map(pid => fullyCompleted.findIndex(g => g.userId === pid) + 1);
+        const allTop3 = myRank >= 1 && myRank <= 3 && partnerRanks.every(r => r >= 1 && r <= 3);
+
+        if (myPairing.teamRewarded) {
+          return (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(234,179,8,0.15), rgba(245,158,11,0.08))',
+              border: '1px solid rgba(234,179,8,0.5)', borderRadius: '20px',
+              padding: '1.25rem 1.75rem', marginBottom: '2rem',
+              display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap'
+            }}>
+              <div style={{ fontSize: '2.5rem' }}>🏆</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: '800', fontSize: '1.1rem', color: '#eab308' }}>Team Reward Earned!</div>
+                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  You and your partner each received <strong style={{ color: '#eab308' }}>₦{(myPairing.rewardAmount || 1000).toLocaleString()}</strong> for being in the Top 3 this week. 🎉
+                </div>
+              </div>
+              <div style={{ fontSize: '1.8rem', fontWeight: '900', color: '#eab308' }}>+₦{(myPairing.rewardAmount || 1000).toLocaleString()}</div>
+            </div>
+          );
+        }
+
+        // Show rank progress if user has submitted goals
+        const myGoal = allGoals.find(g => g.userId === user.uid);
+        if (!myGoal) return null;
+
+        const rankColors = ['#eab308','#94a3b8','#f97316'];
+        const rankLabel = myRank > 0 ? `#${myRank}` : 'Unranked';
+        const isQualified = myRank >= 1 && myRank <= 3;
+        const partnerQualified = partnerRanks.every(r => r >= 1 && r <= 3);
+
+        return (
+          <div style={{
+            background: allTop3 ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.03)',
+            border: allTop3 ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px', padding: '1rem 1.5rem', marginBottom: '2rem',
+            display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap'
+          }}>
+            <div style={{
+              width: '48px', height: '48px', borderRadius: '12px', flexShrink: 0,
+              background: isQualified ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.05)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '1.4rem', fontWeight: '900',
+              color: isQualified ? (rankColors[myRank-1] || '#eab308') : 'var(--text-secondary)'
+            }}>
+              {myRank > 0 ? rankLabel : '?'}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>
+                {allTop3 ? '🎯 Your team qualifies for the ₦1,000 reward! Waiting for admin approval.' :
+                  isQualified ? `You're ranked ${rankLabel} — ${partnerQualified ? '✅ Partner also qualifies!' : '⏳ Waiting for your partner to complete their goals.'}` :
+                  myRank > 3 ? `You're ranked #${myRank} — outside Top 3. Keep pushing!` :
+                  '⏳ Complete all your goals to get ranked.'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Top 3 pairs who set AND complete goals first each earn ₦1,000 🏆
+              </div>
+            </div>
+            {myRank > 0 && (
+              <div style={{ fontSize: '0.85rem', fontWeight: '800', padding: '0.4rem 1rem', borderRadius: '20px',
+                background: isQualified ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.05)',
+                color: isQualified ? '#eab308' : 'var(--text-secondary)',
+                border: `1px solid ${isQualified ? 'rgba(234,179,8,0.3)' : 'rgba(255,255,255,0.08)'}`
+              }}>
+                {isQualified ? '🏅 Top 3' : `#${myRank}`}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Deadlines Section (If Active) */}
       {(timeLeft.setup !== 'EXPIRED' || timeLeft.completion !== 'EXPIRED') && (
@@ -441,20 +626,50 @@ export default function LiveFeedPage() {
             )}
           </div>
 
-          {/* Quick Actions */}
+          {/* Top 3 Setters */}
           <div className="glass-panel" style={{ padding: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1.5rem' }}>Quick Actions</h3>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1.5rem' }}>Top 3 for the week</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {[
-                { label: 'New Task', icon: <FiZap />, color: '#6366f1' },
-                { label: 'Team Stats', icon: <FiUsers />, color: '#a855f7' },
-                { label: 'Analytics', icon: <FiPieChart />, color: '#10b981' }
-              ].map((action, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '14px', cursor: 'pointer', transition: 'all 0.2s ease', border: '1px solid transparent' }}>
-                  <div style={{ color: action.color }}>{action.icon}</div>
-                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{action.label}</span>
-                </div>
-              ))}
+              {(() => {
+                const getTime = (ts) => {
+                  if (!ts) return Infinity;
+                  if (typeof ts.toMillis === 'function') return ts.toMillis();
+                  return new Date(ts).getTime();
+                };
+                const top3 = [...allGoals]
+                  .filter(g => g.submittedAt)
+                  .sort((a, b) => getTime(a.submittedAt) - getTime(b.submittedAt))
+                  .slice(0, 3);
+                
+                if (top3.length === 0) {
+                  return <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Waiting for users to set goals...</p>;
+                }
+
+                return top3.map((g, i) => {
+                  const progress = g.progress || 0;
+                  return (
+                    <div key={g.id} style={{ padding: '1rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1rem', color: i === 0 ? '#fbbf24' : i === 1 ? '#9ca3af' : '#b45309' }}>#{i + 1}</div>
+                        {g.profilePicUrl ? (
+                          <img src={g.profilePicUrl} alt={g.userName} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                            {g.userName?.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span style={{ fontWeight: '600', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.userName}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? 'var(--secondary)' : 'var(--primary)', transition: 'width 0.3s ease' }}></div>
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                        {progress}% Completed
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>

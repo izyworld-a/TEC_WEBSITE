@@ -56,6 +56,10 @@ export default function Dashboard({ user, userData }) {
   const [streakData, setStreakData] = useState({ currentStreak: 0, lastCheckin: null, totalCycles: 0, checkedInToday: false });
   const [streakMsg, setStreakMsg] = useState('');
 
+  // Accountability Partner State
+  const [partners, setPartners] = useState([]);
+  const [systemWallet, setSystemWallet] = useState(0);
+
   // ── Helper: calendar-aware week-of-month (0-indexed, 0 = Week 1) ──────────
   const getMonthId = (date) =>
     `${date.getFullYear()}-M${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -108,6 +112,17 @@ export default function Dashboard({ user, userData }) {
     };
 
     fetchCurrentWeekGoals();
+  }, [user]);
+
+  // Listen to system wallet
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'system_data', 'wallet'), (snap) => {
+      if (snap.exists()) {
+        setSystemWallet(snap.data().adminBalance || 0);
+      }
+    });
+    return () => unsub();
   }, [user]);
 
   // Listen to grace requests in real-time
@@ -226,6 +241,56 @@ export default function Dashboard({ user, userData }) {
     return () => unsub();
   }, [user]);
 
+  // Fetch Accountability Partner(s) in Real-time
+  useEffect(() => {
+    if (!user || !currentWeekId) return;
+    const q = query(collection(db, 'weekly_pairings'), where('weekId', '==', currentWeekId));
+    const unsub = onSnapshot(q, (snap) => {
+      const allPairings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const myPairing = allPairings.find(p => p.userIds?.includes(user.uid));
+
+      if (myPairing) {
+        const otherUserIds = myPairing.userIds.filter(id => id !== user.uid);
+        const unsubscribes = [];
+        const partnerDataMap = {};
+
+        otherUserIds.forEach(pId => {
+          // Listen to user document
+          const userUnsub = onSnapshot(doc(db, 'users', pId), (uSnap) => {
+            if (uSnap.exists()) {
+              partnerDataMap[pId] = {
+                ...partnerDataMap[pId],
+                id: pId,
+                ...uSnap.data()
+              };
+              setPartners(Object.values(partnerDataMap));
+            }
+          });
+          unsubscribes.push(userUnsub);
+
+          // Listen to goals document
+          const goalsUnsub = onSnapshot(doc(db, 'weekly_goals', `${pId}_${currentWeekId}`), (gSnap) => {
+            partnerDataMap[pId] = {
+              ...partnerDataMap[pId],
+              id: pId,
+              goals: gSnap.exists() ? gSnap.data() : null
+            };
+            setPartners(Object.values(partnerDataMap));
+          });
+          unsubscribes.push(goalsUnsub);
+        });
+
+        return () => {
+          unsubscribes.forEach(fn => fn());
+        };
+      } else {
+        setPartners([]);
+      }
+    });
+
+    return () => unsub();
+  }, [user, currentWeekId]);
+
   const handleDailyCheckin = async () => {
     if (!user) return;
     setStreakMsg('');
@@ -342,12 +407,12 @@ export default function Dashboard({ user, userData }) {
     const weekId = getWeekId(now);
 
     // ── Deadline Check ────────────────────────────────────────────────────────
-    const setupDeadlineDate = weekSettings?.setupDeadline ? new Date(weekSettings.setupDeadline) : null;
+    const setupDeadlineDate = weekSettings?.setupDeadline ? new Date(String(weekSettings.setupDeadline).replace(' ', 'T')) : null;
     const now2 = new Date();
     if (setupDeadlineDate && now2 > setupDeadlineDate && !goalsSubmitted) {
       // Check if setup grace period is active
       const sg = graceRequest?.setup;
-      const sgDeadline = sg?.graceDeadline ? new Date(sg.graceDeadline) : null;
+      const sgDeadline = sg?.graceDeadline ? new Date(String(sg.graceDeadline).replace(' ', 'T')) : null;
       const sgActive = sg?.status === 'granted' && sgDeadline && now2 <= sgDeadline;
       if (!sgActive) {
         alert('The goal setting deadline has passed. Request a grace period to submit.');
@@ -356,10 +421,10 @@ export default function Dashboard({ user, userData }) {
       }
     }
     // Check completion deadline for existing submissions
-    const completionDeadlineDate = weekSettings?.completionDeadline ? new Date(weekSettings.completionDeadline) : null;
+    const completionDeadlineDate = weekSettings?.completionDeadline ? new Date(String(weekSettings.completionDeadline).replace(' ', 'T')) : null;
     if (completionDeadlineDate && now2 > completionDeadlineDate && goalsSubmitted) {
       const cg = graceRequest?.completion;
-      const cgDeadline = cg?.graceDeadline ? new Date(cg.graceDeadline) : null;
+      const cgDeadline = cg?.graceDeadline ? new Date(String(cg.graceDeadline).replace(' ', 'T')) : null;
       const cgActive = cg?.status === 'granted' && cgDeadline && now2 <= cgDeadline;
       if (!cgActive) {
         alert('The task submission deadline has passed. Request a grace period to update your goals.');
@@ -393,7 +458,7 @@ export default function Dashboard({ user, userData }) {
       const progress = total === 0 ? 0 : Math.round((completed / total) * 100);
 
       // ── Merge tasks with existing admin data to prevent overriding ──
-      const tasksForSubmission = tasks.map(task => {
+      const mergedTasks = tasks.map(task => {
         const existing = existingTasks.find(et => et.id === task.id);
         if (existing) {
           // Preserve admin-controlled fields strictly from the database
@@ -431,12 +496,23 @@ export default function Dashboard({ user, userData }) {
         }
       }
 
+      // ── SANITIZATION: Clean undefined properties to prevent Firestore write crashes ──
+      const sanitizedTasks = mergedTasks.map(({ isNew, ...task }) => {
+        const cleanedTask = {};
+        Object.entries(task).forEach(([key, val]) => {
+          if (val !== undefined) {
+            cleanedTask[key] = val;
+          }
+        });
+        return cleanedTask;
+      });
+
       await setDoc(goalDocRef, {
         userId: user.uid,
-        userName: userData.name,
-        profilePicUrl: userData.profilePicUrl || '',
+        userName: userData?.name || user.displayName || user.email || 'Anonymous',
+        profilePicUrl: userData?.profilePicUrl || user.photoURL || '',
         weekId: weekId,
-        tasks: tasksForSubmission.map(({ isNew, ...t }) => t), // Remove isNew flag before saving
+        tasks: sanitizedTasks,
         progress: progress,
         reviewStatus: 'pending', // admin needs to review
         submittedAt: existingData?.submittedAt || serverTimestamp(),
@@ -454,7 +530,7 @@ export default function Dashboard({ user, userData }) {
       alert('Goals saved! Previously set descriptions remain locked.');
     } catch (err) {
       console.error(err);
-      alert('Failed to save goals. Please try again.');
+      alert(`Failed to save goals. Error: ${err.message}`);
     } finally {
       setSubmittingGoals(false);
     }
@@ -640,8 +716,8 @@ export default function Dashboard({ user, userData }) {
   };
 
   const now = new Date();
-  const setupDeadline = weekSettings?.setupDeadline ? new Date(weekSettings.setupDeadline) : null;
-  const completionDeadline = weekSettings?.completionDeadline ? new Date(weekSettings.completionDeadline) : null;
+  const setupDeadline = weekSettings?.setupDeadline ? new Date(String(weekSettings.setupDeadline).replace(' ', 'T')) : null;
+  const completionDeadline = weekSettings?.completionDeadline ? new Date(String(weekSettings.completionDeadline).replace(' ', 'T')) : null;
 
   const isPastSetup = setupDeadline && now > setupDeadline;
   const isPastCompletion = completionDeadline && now > completionDeadline;
@@ -650,8 +726,8 @@ export default function Dashboard({ user, userData }) {
   const setupGrace = graceRequest?.setup;
   const completionGrace = graceRequest?.completion;
 
-  const setupGraceDeadline = setupGrace?.graceDeadline ? new Date(setupGrace.graceDeadline) : null;
-  const completionGraceDeadline = completionGrace?.graceDeadline ? new Date(completionGrace.graceDeadline) : null;
+  const setupGraceDeadline = setupGrace?.graceDeadline ? new Date(String(setupGrace.graceDeadline).replace(' ', 'T')) : null;
+  const completionGraceDeadline = completionGrace?.graceDeadline ? new Date(String(completionGrace.graceDeadline).replace(' ', 'T')) : null;
 
   // Is the user allowed to set goals? 
   // Yes if: deadline hasn't passed, OR grace was granted and grace deadline hasn't passed
@@ -883,7 +959,7 @@ export default function Dashboard({ user, userData }) {
         </div>
       )}
       {/* Private Stats Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--secondary)' }}>
             <FiDollarSign size={24} />
@@ -893,6 +969,16 @@ export default function Dashboard({ user, userData }) {
               Wallet Balance <FiShield size={12} title="Private to you" />
             </div>
             <div style={{ fontSize: '1.25rem', fontWeight: '700' }}>₦{userData?.walletBalance || 0}</div>
+          </div>
+        </div>
+
+        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(16, 185, 129, 0.1)', background: 'rgba(16, 185, 129, 0.04)' }}>
+          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
+            <FiShield size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>System Recovered Funds</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10b981' }}>₦{systemWallet.toLocaleString()}</div>
           </div>
         </div>
 
@@ -962,6 +1048,7 @@ export default function Dashboard({ user, userData }) {
         <button onClick={() => setActiveTab('streak')} className={`btn ${activeTab === 'streak' ? 'btn-primary' : 'btn-secondary'}`}><FiZap /> Daily Streak</button>
         <button onClick={() => setActiveTab('attendance')} className={`btn ${activeTab === 'attendance' ? 'btn-primary' : 'btn-secondary'}`}>Attendance Check-In</button>
         <button onClick={() => setActiveTab('profile')} className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}>Profile Settings</button>
+        <button onClick={() => setActiveTab('partner')} className={`btn ${activeTab === 'partner' ? 'btn-primary' : 'btn-secondary'}`}>🤝 Partner</button>
         <Link to="/livefeed" className="btn btn-secondary" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary)', color: 'white', border: 'none' }}>
           <FiActivity /> Live Feed
         </Link>
@@ -1492,6 +1579,157 @@ export default function Dashboard({ user, userData }) {
             </div>
             <button type="submit" className="btn btn-primary">Check In</button>
           </form>
+        </div>
+      )}
+
+      {activeTab === 'partner' && (
+        <div className="glass-panel" style={{ padding: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+            <span style={{ fontSize: '2rem' }}>🤝</span>
+            <div>
+              <h2 style={{ margin: 0 }}>Weekly Accountability Partner</h2>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                Track your partner's goals, view their proof of work, and support each other to succeed this week.
+              </p>
+            </div>
+          </div>
+
+          {partners.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3.5rem 1rem', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border)', borderRadius: '16px', color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
+              <strong style={{ display: 'block', fontSize: '1.1rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>No Partner Assigned Yet</strong>
+              <p style={{ margin: 0, fontSize: '0.875rem', maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto', lineHeight: '1.5' }}>
+                Accountability partners are paired weekly by the Admin. Check back shortly or contact the circles Coordinator if you believe this is an error.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              {partners.map(partner => {
+                const partnerGoals = partner.goals || {};
+                const partnerTasks = partnerGoals.tasks || [];
+                const totalTasks = partnerTasks.length;
+                const completedTasks = partnerTasks.filter(t => t.status === 'Completed').length;
+                const progress = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+
+                return (
+                  <div key={partner.id} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
+                    {/* Partner Profile Header */}
+                    <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {partner.profilePicUrl ? (
+                        <img src={partner.profilePicUrl} alt={partner.name} style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary)' }} />
+                      ) : (
+                        <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                          {(partner.name || 'P').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: '200px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>{partner.name || 'Anonymous Partner'}</h3>
+                          <span style={{ padding: '0.15rem 0.6rem', borderRadius: '20px', fontSize: '0.7rem', fontWeight: '700', background: partner.status === 'Active' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: partner.status === 'Active' ? '#10b981' : 'var(--warning)' }}>
+                            {partner.status || 'Active'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '500', marginTop: '2px' }}>{partner.profession || 'Execution Circle Member'}</div>
+                        {partner.bio && <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '6px 0 0 0', fontStyle: 'italic', lineHeight: '1.4' }}>"{partner.bio}"</p>}
+                      </div>
+
+                      {/* Contact Socials */}
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {partner.email && (
+                          <a href={`mailto:${partner.email}`} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }} title="Send Email">
+                            📧 Email
+                          </a>
+                        )}
+                        {partner.socials?.twitter && (
+                          <a href={partner.socials.twitter.startsWith('http') ? partner.socials.twitter : `https://x.com/${partner.socials.twitter.replace('@', '')}`} target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.78rem' }}>
+                            𝕏 Twitter
+                          </a>
+                        )}
+                        {partner.socials?.linkedin && (
+                          <a href={partner.socials.linkedin.startsWith('http') ? partner.socials.linkedin : `https://${partner.socials.linkedin}`} target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.78rem' }}>
+                            💼 LinkedIn
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress Tracker */}
+                    <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem', fontWeight: '600' }}>
+                        <span>Partner's Goals Progress</span>
+                        <span style={{ color: progress === 100 ? '#10b981' : 'var(--primary)' }}>
+                          {completedTasks}/{totalTasks} Goals Completed ({progress}%)
+                        </span>
+                      </div>
+                      <div style={{ height: '10px', background: 'rgba(255,255,255,0.08)', borderRadius: '100px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          height: '100%', 
+                          width: `${progress}%`, 
+                          background: progress === 100 ? 'linear-gradient(90deg, #10b981, #06b6d4)' : 'linear-gradient(90deg, var(--primary), var(--secondary))',
+                          borderRadius: '100px',
+                          transition: 'width 0.5s ease-in-out'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Goals Table */}
+                    <div>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.75rem' }}>Weekly Goals</h4>
+                      {partnerTasks.length === 0 ? (
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>No goals set for this week yet.</p>
+                      ) : (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                                <th style={{ padding: '0.5rem 0.75rem' }}>Task Description</th>
+                                <th style={{ padding: '0.5rem 0.75rem', width: '150px' }}>Status</th>
+                                <th style={{ padding: '0.5rem 0.75rem' }}>Proof / Evidence</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {partnerTasks.map((task, idx) => (
+                                <tr key={task.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                  <td style={{ padding: '0.75rem' }}>
+                                    <div style={{ fontSize: '0.7rem', color: idx < 3 ? 'var(--primary)' : 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '2px' }}>
+                                      {idx < 3 ? 'Compulsory' : 'Optional'}
+                                    </div>
+                                    <span style={{ fontWeight: '500' }}>{task.description || '—'}</span>
+                                  </td>
+                                  <td style={{ padding: '0.75rem' }}>
+                                    <span style={{
+                                      padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
+                                      background: task.status === 'Completed' ? 'rgba(16,185,129,0.15)' : task.status === 'Not Completed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                                      color: task.status === 'Completed' ? '#10b981' : task.status === 'Not Completed' ? 'var(--danger)' : 'var(--warning)'
+                                    }}>
+                                      {task.status || 'Pending'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '0.75rem' }}>
+                                    {task.proofImage ? (
+                                      <a href={task.proofImage} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'underline' }}>
+                                        📷 View Image Proof
+                                      </a>
+                                    ) : task.proofText ? (
+                                      <a href={task.proofText.startsWith('http') ? task.proofText : `https://${task.proofText}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'underline' }}>
+                                        🔗 View Link
+                                      </a>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No proof provided</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

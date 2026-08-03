@@ -11,20 +11,24 @@ service cloud.firestore {
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-    
-    // Helper to check if the logged in user is an Admin
-    function isAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+
+    // Get the user's Firestore document data (single get, reused)
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
-    // Helper to check if the logged in user is a Moderator
+    // Helper to check if the logged in user is an Admin
+    // Uses a single get() call (null-safe) instead of exists() + get()
+    function isAdmin() {
+      return isAuthenticated() && getUserData().get('isAdmin', false) == true;
+    }
+    
+    // Helper to check if the logged in user is a Moderator (or Admin)
     function isModerator() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isModerator == true || 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
+      return isAuthenticated() && (
+        getUserData().get('isModerator', false) == true ||
+        getUserData().get('isAdmin', false) == true
+      );
     }
 
     // Rules for users collection
@@ -37,7 +41,7 @@ service cloud.firestore {
     match /weekly_goals/{goalId} {
       allow read: if isAuthenticated();
       // Allow write if the goalId contains their userId or they are owner (e.g. userUid_weekId)
-      allow write: if isAuthenticated() && (goalId.startsWith(request.auth.uid) || isAdmin() || isModerator());
+      allow write: if isAuthenticated() && (goalId.matches('^' + request.auth.uid + '_.*') || isAdmin() || isModerator());
     }
 
     // Rules for week_settings collection
@@ -75,13 +79,19 @@ service cloud.firestore {
     // Rules for monthly_visions collection
     match /monthly_visions/{visionId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (visionId.startsWith(request.auth.uid) || isAdmin());
+      allow write: if isAuthenticated() && (visionId.matches('^' + request.auth.uid + '_.*') || isAdmin());
     }
 
     // Rules for daily_streaks collection
     match /daily_streaks/{streakId} {
       allow read: if isAuthenticated();
       allow write: if isOwner(streakId) || isAdmin();
+    }
+
+    // Rules for weekly_pairings collection
+    match /weekly_pairings/{pairingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isModerator();
     }
   }
 }

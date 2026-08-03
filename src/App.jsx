@@ -14,11 +14,15 @@ import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getWeekId } from './utils/weekUtils';
+import { useNotifications } from './utils/useNotifications';
 
 function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Global notifications — deadlines, announcements, moderator assignment
+  useNotifications(user, userData);
 
   useEffect(() => {
     let unsubscribeUserData = null;
@@ -101,7 +105,7 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/livefeed" element={<LiveFeedPage />} />
+            <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
