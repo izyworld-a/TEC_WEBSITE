@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { auth } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import { AuthContextPanel } from '../components/ProductUI';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -30,8 +31,14 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="glass-panel auth-card">
-      <h2>Reset Password</h2>
+    <div className="tec-auth-layout">
+      <AuthContextPanel
+        title="Recover your weekly board"
+        subtitle="Reset your password, then return to your goals, proof submissions, and review progress."
+      />
+
+      <div className="glass-panel auth-card">
+      <h2>Reset TEC Password</h2>
       <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
         Enter the email address associated with your account, and we'll send you a link to reset your password.
       </p>
@@ -66,6 +73,7 @@ export default function ForgotPassword() {
         <Link to="/login" style={{ color: 'var(--text-secondary)' }}>
           Back to <span style={{ color: 'var(--primary)', fontWeight: '500' }}>Login</span>
         </Link>
+      </div>
       </div>
     </div>
   );

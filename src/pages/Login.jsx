@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 import { auth } from '../firebase';
 import { signInWithEmailAndPassword, signOut, sendEmailVerification } from 'firebase/auth';
+import { AuthContextPanel } from '../components/ProductUI';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -43,8 +44,17 @@ export default function Login() {
   };
 
   return (
-    <div className="glass-panel auth-card">
-      <h2>Welcome Back</h2>
+    <div className="tec-auth-layout">
+      <AuthContextPanel
+        title="Back to the circle"
+        subtitle="Sign in to update your goals, check deadlines, submit proof, and see where you stand this week."
+      />
+
+      <div className="glass-panel auth-card">
+      <h2>Sign in to TEC Weekly</h2>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem', lineHeight: '1.55', textAlign: 'center' }}>
+        Your dashboard opens to goals, proof, wallet status, and review progress.
+      </p>
       {error && <div style={{ color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.875rem', textAlign: 'center' }}>{error}</div>}
       
       <form onSubmit={handleLogin}>
@@ -97,8 +107,9 @@ export default function Login() {
       
       <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>
         <Link to="/register" style={{ color: 'var(--text-secondary)' }}>
-          Don't have an account? <span style={{ color: 'var(--primary)', fontWeight: '500' }}>Sign up</span>
+          New to the circle? <span style={{ color: 'var(--primary)', fontWeight: '600' }}>Apply to join</span>
         </Link>
+      </div>
       </div>
     </div>
   );

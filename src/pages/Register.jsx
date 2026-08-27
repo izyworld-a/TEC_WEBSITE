@@ -5,6 +5,7 @@ import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import SignatureCanvasComponent from 'react-signature-canvas';
+import { AuthContextPanel } from '../components/ProductUI';
 const SignatureCanvas = SignatureCanvasComponent.default || SignatureCanvasComponent;
 
 const termsText = `THE EXECUTION CIRCLE
@@ -205,8 +206,17 @@ export default function Register() {
   };
 
   return (
-    <div className="glass-panel auth-card" style={{ position: 'relative' }}>
-      <h2>Create Account</h2>
+    <div className="tec-auth-layout">
+      <AuthContextPanel
+        title="Join The Execution Circle"
+        subtitle="Registration is the first checkpoint: sign the agreement, fund your wallet, then wait for admin approval."
+      />
+
+      <div className="glass-panel auth-card" style={{ position: 'relative' }}>
+      <h2>Apply for Membership</h2>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem', lineHeight: '1.55', textAlign: 'center' }}>
+        New accounts remain pending until the agreement is signed and the minimum wallet balance is confirmed.
+      </p>
       {error && <div style={{ color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.875rem', textAlign: 'center' }}>{error}</div>}
       
       <form onSubmit={handleRegister}>
@@ -290,7 +300,7 @@ export default function Register() {
       
       <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>
         <Link to="/login" style={{ color: 'var(--text-secondary)' }}>
-          Already have an account? <span style={{ color: 'var(--primary)', fontWeight: '500' }}>Login</span>
+          Already approved? <span style={{ color: 'var(--primary)', fontWeight: '600' }}>Sign in</span>
         </Link>
       </div>
 
@@ -385,6 +395,7 @@ export default function Register() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

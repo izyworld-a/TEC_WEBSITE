@@ -1,38 +1,68 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
+  /* Brand Color Palette */
+  --white: #ffffff;
+  --indigo-500: #6366f1;
+  --indigo-600: #4f46e5;
+  --indigo-950: #1e1b4b;
+  --blue-500: #3b82f6;
+  --tec-ink: #111827;
+  --tec-navy: #17153f;
+  --tec-violet: #5146e5;
+  --tec-green: #0f9f6e;
+  --tec-gold: #d97706;
+  --tec-paper: #ffffff;
+  --tec-line: #d8deea;
+
   /* Light Theme Variables */
-  --bg-main: #f4f6fa;
+  --bg-main: #f8fafc;
+  --bg-soft: #f8fafc;
   --bg-card: #ffffff;
-  --text-main: #111827;
-  --text-secondary: #4b5563;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-secondary: #475569;
   --primary: #4f46e5;
   --primary-hover: #4338ca;
   --secondary: #10b981;
   --danger: #ef4444;
   --warning: #f59e0b;
-  --border: #e5e7eb;
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.5);
+  --border: #e2e8f0;
+  --border-light: #e2e8f0;
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(226, 232, 240, 0.8);
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0 10px 25px -5px rgba(30, 27, 75, 0.05), 0 8px 10px -6px rgba(30, 27, 75, 0.01);
+  --shadow-hover: 0 20px 25px -5px rgba(30, 27, 75, 0.1), 0 8px 10px -6px rgba(30, 27, 75, 0.04);
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --header-height: 76px;
   --star-color: #f59e0b;
 }
 
 [data-theme='dark'] {
   /* Dark Theme Variables */
-  --bg-main: #0f172a;
+  --bg-main: #0b0f19;
+  --bg-soft: #0f172a;
   --bg-card: #1e293b;
   --text-main: #f8fafc;
+  --text-muted: #94a3b8;
   --text-secondary: #94a3b8;
   --primary: #6366f1;
   --primary-hover: #818cf8;
   --secondary: #10b981;
   --border: #334155;
-  --glass-bg: rgba(30, 41, 59, 0.7);
+  --border-light: #334155;
+  --glass-bg: rgba(30, 41, 59, 0.85);
   --glass-border: rgba(255, 255, 255, 0.1);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-soft: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 * {
@@ -65,7 +95,7 @@ ul {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-md);
-  border-radius: 16px;
+  border-radius: 8px;
 }
 
 .btn {
@@ -145,6 +175,14 @@ ul {
   width: 100%;
 }
 
+.main-content-home {
+  flex: 1;
+  padding: 0;
+  max-width: 100%;
+  margin: 0;
+  width: 100%;
+}
+
 /* Navbar */
 .navbar {
   position: sticky;
@@ -160,7 +198,7 @@ ul {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--primary);
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
 }
 
 .nav-links {
@@ -224,7 +262,7 @@ ul {
 
 .auth-card h2 {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 0.75rem;
 }
 
 /* Star Rating Utility */
@@ -247,23 +285,24 @@ ul {
 /* Responsive Nav */
 .home-nav-links {
   display: flex;
-  gap: 2rem;
-  font-weight: 600;
-  flex: 1;
-  justify-content: center;
+  align-items: center;
+  gap: 2.25rem;
+  font-weight: 500;
+  font-size: 0.95rem;
 }
 
 .home-nav-links a {
-  color: var(--text-main);
+  color: var(--text-secondary);
   text-decoration: none;
-  transition: color 0.2s;
+  transition: color 0.2s ease;
+  letter-spacing: -0.01em;
 }
 
 .home-nav-links a:hover {
   color: var(--primary);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 850px) {
   .home-nav-links {
     display: none;
   }
@@ -527,5 +566,1005 @@ ul {
 @media (max-width: 480px) {
   .hero-title {
     font-size: 2.25rem;
+  }
+}
+
+/* TEC product identity */
+.tec-container {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.tec-landing {
+  background: #f6f7fb;
+  color: var(--tec-ink);
+  overflow-x: hidden;
+}
+
+[data-theme='dark'] .tec-landing {
+  background: #0b1020;
+  color: #f8fafc;
+}
+
+.tec-hero {
+  min-height: 84vh;
+  display: flex;
+  align-items: center;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(135deg, #17153f 0%, #25215c 58%, #0f172a 100%);
+  background-size: 56px 56px, 56px 56px, auto;
+  color: white;
+  padding: 6rem 0 5rem;
+}
+
+.tec-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  gap: 4rem;
+  align-items: center;
+}
+
+.tec-kicker,
+.tec-section-kicker,
+.tec-auth-context-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tec-kicker img {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: white;
+}
+
+.tec-hero h1 {
+  max-width: 760px;
+  margin: 1rem 0 1.15rem;
+  color: white;
+  font-size: 4rem;
+  line-height: 1.02;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.tec-hero-lead {
+  max-width: 680px;
+  margin: 0 0 2rem;
+  color: rgba(255,255,255,0.86);
+  font-size: 1.25rem;
+  line-height: 1.7;
+}
+
+.tec-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.tec-btn-primary,
+.tec-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 46px;
+  padding: 0.85rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.tec-btn-primary {
+  background: #12b981;
+  color: #06281d;
+  box-shadow: 0 14px 30px rgba(18, 185, 129, 0.22);
+}
+
+.tec-btn-primary:hover {
+  background: #34d399;
+  transform: translateY(-1px);
+}
+
+.tec-btn-secondary {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.22);
+  color: white;
+}
+
+.tec-btn-secondary:hover {
+  background: rgba(255,255,255,0.14);
+  color: white;
+}
+
+.tec-btn-full {
+  width: 100%;
+}
+
+.tec-hero-facts {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tec-hero-facts span,
+.tec-circle-chip,
+.tec-week-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.tec-hero-facts span {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.86);
+}
+
+.tec-dashboard-preview {
+  background: #ffffff;
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 8px;
+  color: #111827;
+  padding: 1rem;
+  box-shadow: 0 28px 80px rgba(0,0,0,0.32);
+}
+
+.tec-preview-topbar,
+.tec-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+}
+
+.tec-preview-eyebrow,
+.tec-preview-topbar span,
+.tec-preview-wallet span,
+.tec-preview-review span,
+.tec-review-panel span,
+.tec-info-card span {
+  display: block;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.tec-preview-topbar strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.25rem;
+}
+
+.tec-preview-badge {
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534 !important;
+  padding: 0.35rem 0.65rem;
+}
+
+.tec-preview-wallet {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: #111827;
+  color: white;
+}
+
+.tec-preview-wallet strong {
+  font-size: 2rem;
+}
+
+.tec-preview-wallet small {
+  color: #a7f3d0;
+  font-weight: 700;
+}
+
+.tec-preview-goals {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.tec-preview-goal,
+.tec-review-row,
+.tec-review-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.8rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.tec-preview-goal span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: #ede9fe;
+  color: var(--tec-violet);
+  font-weight: 900;
+}
+
+.tec-preview-goal p,
+.tec-review-panel p,
+.tec-footer p,
+.tec-info-card p {
+  margin: 0;
+}
+
+.tec-preview-goal strong {
+  color: var(--tec-green);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.tec-preview-review {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.tec-section {
+  padding: 5.5rem 0;
+}
+
+.tec-section-header {
+  max-width: 760px;
+  margin: 0 auto 3rem;
+  text-align: center;
+}
+
+.tec-section-header-left {
+  margin-left: 0;
+  text-align: left;
+}
+
+.tec-section-header h2,
+.tec-proof-grid h2,
+.tec-reward-band h2,
+.tec-statement-band h2 {
+  margin: 0.65rem 0 0.85rem;
+  color: var(--tec-navy);
+  font-size: 2.65rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+[data-theme='dark'] .tec-section-header h2,
+[data-theme='dark'] .tec-proof-grid h2,
+[data-theme='dark'] .tec-reward-band h2 {
+  color: #f8fafc;
+}
+
+.tec-section-header p,
+.tec-proof-grid p,
+.tec-feature-card p,
+.tec-reward-band p,
+.tec-statement-band p,
+.tec-contact-form-card p {
+  color: #5b6576;
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+[data-theme='dark'] .tec-section-header p,
+[data-theme='dark'] .tec-proof-grid p,
+[data-theme='dark'] .tec-feature-card p,
+[data-theme='dark'] .tec-contact-form-card p {
+  color: #aab6c8;
+}
+
+.tec-section-kicker {
+  color: var(--tec-green);
+}
+
+.tec-workflow-section,
+.tec-features-section {
+  background: white;
+}
+
+[data-theme='dark'] .tec-workflow-section,
+[data-theme='dark'] .tec-features-section {
+  background: #0f172a;
+}
+
+.tec-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.tec-workflow-card,
+.tec-feature-card,
+.tec-contact-form-card,
+.tec-info-card,
+.tec-review-panel,
+.tec-live-metric,
+.tec-auth-context {
+  border: 1px solid var(--tec-line);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 14px 35px rgba(17, 24, 39, 0.06);
+}
+
+[data-theme='dark'] .tec-workflow-card,
+[data-theme='dark'] .tec-feature-card,
+[data-theme='dark'] .tec-contact-form-card,
+[data-theme='dark'] .tec-info-card,
+[data-theme='dark'] .tec-review-panel,
+[data-theme='dark'] .tec-live-metric,
+[data-theme='dark'] .tec-auth-context {
+  background: #111827;
+  border-color: #253044;
+}
+
+.tec-workflow-card {
+  min-height: 250px;
+  padding: 1.15rem;
+  position: relative;
+}
+
+.tec-workflow-number {
+  color: #a8b1c3;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.tec-workflow-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 1rem 0 1.25rem;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: var(--tec-violet);
+  font-size: 1.25rem;
+}
+
+.tec-workflow-card h3,
+.tec-feature-card h3,
+.tec-contact-form-card h3 {
+  margin: 0 0 0.65rem;
+  color: var(--tec-navy);
+  font-size: 1.1rem;
+}
+
+[data-theme='dark'] .tec-workflow-card h3,
+[data-theme='dark'] .tec-feature-card h3,
+[data-theme='dark'] .tec-contact-form-card h3 {
+  color: #f8fafc;
+}
+
+.tec-workflow-card p {
+  margin: 0;
+  color: #5b6576;
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+
+.tec-proof-section {
+  background: #f6f7fb;
+}
+
+[data-theme='dark'] .tec-proof-section {
+  background: #0b1020;
+}
+
+.tec-proof-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr);
+  align-items: center;
+  gap: 4rem;
+}
+
+.tec-proof-list {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+}
+
+.tec-proof-list div {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--tec-ink);
+  font-weight: 700;
+}
+
+[data-theme='dark'] .tec-proof-list div {
+  color: #e5e7eb;
+}
+
+.tec-proof-list svg {
+  color: var(--tec-green);
+}
+
+.tec-review-panel {
+  padding: 1.15rem;
+}
+
+.tec-review-row {
+  grid-template-columns: 1fr;
+  margin-bottom: 0.75rem;
+}
+
+.tec-review-actions {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 1rem;
+  background: transparent;
+}
+
+.tec-review-actions span,
+.tec-review-actions strong {
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  border-radius: 8px;
+}
+
+.tec-review-actions span {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.tec-review-actions strong {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.tec-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.tec-feature-card {
+  padding: 1.35rem;
+}
+
+.tec-reward-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 2rem;
+  align-items: center;
+  margin-top: 1.25rem;
+  padding: 2rem;
+  border-radius: 8px;
+  background: #15133f;
+  color: white;
+}
+
+.tec-reward-band h2,
+.tec-reward-band p {
+  color: white;
+}
+
+.tec-reward-band p {
+  opacity: 0.78;
+}
+
+.tec-reward-metrics {
+  padding: 1rem;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.09);
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+.tec-reward-metrics span,
+.tec-reward-metrics small {
+  color: rgba(255,255,255,0.72);
+  font-weight: 700;
+}
+
+.tec-reward-metrics strong {
+  display: block;
+  margin: 0.25rem 0;
+  color: #fbbf24;
+  font-size: 2rem;
+}
+
+.tec-statement-band {
+  padding: 4rem 0;
+  background: #111827;
+  color: white;
+  text-align: center;
+}
+
+.tec-statement-band svg {
+  color: #fbbf24;
+  font-size: 2rem;
+}
+
+.tec-statement-band h2 {
+  color: white;
+}
+
+.tec-statement-band p {
+  max-width: 620px;
+  margin: 0 auto;
+  color: rgba(255,255,255,0.72);
+}
+
+.tec-contact-section {
+  padding: 5.5rem 0;
+  background: #f6f7fb;
+}
+
+[data-theme='dark'] .tec-contact-section {
+  background: #0b1020;
+}
+
+.tec-contact-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.tec-contact-form-card,
+.tec-info-card,
+.tec-meeting-badge {
+  padding: 1.5rem;
+}
+
+.tec-input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.tec-input-group {
+  margin-bottom: 1rem;
+}
+
+.tec-input-group label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--tec-ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+[data-theme='dark'] .tec-input-group label {
+  color: #f8fafc;
+}
+
+.tec-input {
+  width: 100%;
+  border: 1px solid var(--tec-line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--tec-ink);
+  font: inherit;
+  padding: 0.78rem 0.9rem;
+}
+
+[data-theme='dark'] .tec-input {
+  background: #0f172a;
+  border-color: #253044;
+  color: #f8fafc;
+}
+
+.tec-input:focus {
+  outline: none;
+  border-color: var(--tec-green);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+
+.tec-success-message {
+  display: grid;
+  place-items: center;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(15,159,110,0.26);
+  background: rgba(15,159,110,0.08);
+  color: var(--tec-green);
+  font-weight: 800;
+}
+
+.tec-contact-details {
+  display: grid;
+  gap: 1rem;
+}
+
+.tec-info-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.tec-info-card strong,
+.tec-info-card a {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--tec-navy);
+  font-weight: 800;
+}
+
+[data-theme='dark'] .tec-info-card strong,
+[data-theme='dark'] .tec-info-card a {
+  color: #f8fafc;
+}
+
+.tec-info-icon-box {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: var(--tec-violet);
+  flex: 0 0 auto;
+}
+
+.tec-meeting-badge {
+  border-radius: 8px;
+  background: #15133f;
+  color: white;
+}
+
+.tec-meeting-badge div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tec-meeting-badge h4 {
+  margin: 0.75rem 0 0.5rem;
+  color: white;
+}
+
+.tec-meeting-badge p {
+  margin: 0.25rem 0;
+  color: rgba(255,255,255,0.78);
+}
+
+.tec-footer {
+  background: #0f102f;
+  color: white;
+  padding: 4rem 0 2rem;
+}
+
+.tec-footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 2rem;
+}
+
+.tec-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.tec-footer-brand img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: white;
+}
+
+.tec-footer-brand span,
+.tec-footer h4 {
+  font-weight: 900;
+}
+
+.tec-footer h4 {
+  margin: 0 0 0.8rem;
+}
+
+.tec-footer p,
+.tec-footer-bottom {
+  color: rgba(255,255,255,0.68);
+}
+
+.tec-footer-bottom {
+  max-width: 1180px;
+  margin: 2.5rem auto 0;
+  padding: 1.5rem 2rem 0;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+.tec-auth-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(340px, 440px);
+  align-items: center;
+  gap: 2rem;
+  width: min(100%, 980px);
+  margin: 3rem auto;
+}
+
+.tec-auth-layout .auth-card {
+  margin: 0;
+  max-width: none;
+}
+
+.tec-auth-context {
+  padding: 2rem;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+    #15133f;
+  background-size: 42px 42px, 42px 42px, auto;
+  color: white;
+}
+
+.tec-auth-context h1 {
+  margin: 0.8rem 0 0.75rem;
+  color: white;
+  font-size: 2.2rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.tec-auth-context p {
+  color: rgba(255,255,255,0.78);
+  line-height: 1.65;
+  margin-bottom: 1.35rem;
+}
+
+.tec-auth-context-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.tec-auth-context-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.9rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.07);
+}
+
+.tec-auth-context-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(16,185,129,0.14);
+  color: #a7f3d0;
+  flex: 0 0 auto;
+}
+
+.tec-auth-context-item strong,
+.tec-auth-context-item small {
+  display: block;
+}
+
+.tec-auth-context-item small {
+  margin-top: 0.2rem;
+  color: rgba(255,255,255,0.68);
+  line-height: 1.45;
+}
+
+.tec-live-metric {
+  padding: 1.15rem;
+}
+
+.tec-live-metric-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.tec-live-metric-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: var(--tec-violet);
+  font-size: 1.25rem;
+}
+
+.tec-live-metric-amber .tec-live-metric-icon {
+  background: #fff7ed;
+  color: var(--tec-gold);
+}
+
+.tec-live-metric-green .tec-live-metric-icon {
+  background: #dcfce7;
+  color: var(--tec-green);
+}
+
+.tec-live-metric-slate .tec-live-metric-icon {
+  background: #e5e7eb;
+  color: #334155;
+}
+
+.tec-live-metric-status {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.tec-live-metric strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--tec-ink);
+  font-size: 2rem;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+[data-theme='dark'] .tec-live-metric strong {
+  color: #f8fafc;
+}
+
+.tec-live-metric > span:last-child {
+  color: #5b6576;
+  font-weight: 700;
+}
+
+.tec-circle-chip,
+.tec-week-chip {
+  border-color: var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.tec-week-chip svg,
+.tec-circle-chip svg {
+  color: var(--tec-green);
+}
+
+.tec-navbar {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tec-nav-meta {
+  align-items: center;
+  gap: 0.55rem;
+  margin-left: 1rem;
+  margin-right: auto;
+}
+
+.tec-live-page {
+  background:
+    linear-gradient(90deg, rgba(99,102,241,0.05) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(15,159,110,0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  border-radius: 8px;
+}
+
+.tec-live-heading {
+  padding-top: 0.5rem;
+}
+
+.tec-live-heading-chips {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
+.tec-live-metrics-grid {
+  align-items: stretch;
+}
+
+@media (max-width: 1020px) {
+  .tec-hero-grid,
+  .tec-proof-grid,
+  .tec-contact-grid,
+  .tec-auth-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tec-workflow-grid,
+  .tec-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tec-dashboard-preview {
+    max-width: 560px;
+  }
+}
+
+@media (max-width: 768px) {
+  .tec-container {
+    padding: 0 1rem;
+  }
+
+  .tec-hero {
+    min-height: auto;
+    padding: 5rem 0 4rem;
+  }
+
+  .tec-hero h1 {
+    font-size: 3rem;
+  }
+
+  .tec-hero-lead {
+    font-size: 1.05rem;
+  }
+
+  .tec-section {
+    padding: 4rem 0;
+  }
+
+  .tec-section-header h2,
+  .tec-proof-grid h2,
+  .tec-reward-band h2,
+  .tec-statement-band h2 {
+    font-size: 2rem;
+  }
+
+  .tec-workflow-grid,
+  .tec-feature-grid,
+  .tec-input-row,
+  .tec-footer-grid,
+  .tec-reward-band {
+    grid-template-columns: 1fr;
+  }
+
+  .tec-auth-layout {
+    margin: 1.5rem auto;
+  }
+
+  .tec-auth-context {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .tec-hero h1 {
+    font-size: 2.45rem;
+  }
+
+  .tec-dashboard-preview,
+  .tec-review-panel,
+  .tec-contact-form-card {
+    padding: 1rem;
   }
 }

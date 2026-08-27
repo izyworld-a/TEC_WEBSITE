@@ -41,8 +41,15 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
-  // Skip Firebase / Firestore / Auth requests — always go to network
+  // Skip localhost, dev server, Vite endpoints, and Firebase/Auth requests
   if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.pathname.startsWith('/@vite') ||
+    url.pathname.startsWith('/@fs') ||
+    url.pathname.startsWith('/@id') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.includes('?token=') ||
     url.hostname.includes('firebaseapp.com') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('firestore.googleapis.com') ||

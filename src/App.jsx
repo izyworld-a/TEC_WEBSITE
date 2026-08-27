@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import LiveFeedPage from './pages/LiveFeedPage';
@@ -100,36 +100,47 @@ function App() {
 
   return (
     <Router>
-      <div className="app-container">
-        <Navbar user={user} userData={userData} />
-        <main className="main-content">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/pending" element={user && userData?.status === 'Pending' ? <PendingPage userData={userData} /> : <Navigate to="/" />} />
-            
-            <Route path="/dashboard" element={
-              <ProtectedRoute>
-                <Dashboard user={user} userData={userData} />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/admin" element={
-              <ProtectedRoute requireAdmin={true}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            } />
+      <AppContent user={user} userData={userData} ProtectedRoute={ProtectedRoute} />
+    </Router>
+  );
+}
 
-            <Route path="/moderator" element={
-              <ProtectedRoute requireModerator={true}>
-                <ModeratorDashboard user={user} userData={userData} />
-              </ProtectedRoute>
-            } />
-          </Routes>
-        </main>
+function AppContent({ user, userData, ProtectedRoute }) {
+  const { pathname } = useLocation();
+  const isHome = pathname === '/';
+
+  return (
+    <div className="app-container">
+      <Navbar user={user} userData={userData} />
+      <main className={isHome ? "main-content-home" : "main-content"}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/pending" element={user && userData?.status === 'Pending' ? <PendingPage userData={userData} /> : <Navigate to="/" />} />
+
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <Dashboard user={user} userData={userData} />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/admin" element={
+            <ProtectedRoute requireAdmin={true}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/moderator" element={
+            <ProtectedRoute requireModerator={true}>
+              <ModeratorDashboard user={user} userData={userData} />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </main>
+      {!isHome && (
         <footer style={{ 
           textAlign: 'center', 
           padding: '2rem', 
@@ -140,8 +151,8 @@ function App() {
         }}>
           © 2025 Izyworld Global Limited. All rights Reserved
         </footer>
-      </div>
-    </Router>
+      )}
+    </div>
   );
 }
 

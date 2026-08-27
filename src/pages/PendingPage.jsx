@@ -5,7 +5,13 @@ import { signOut } from 'firebase/auth';
 export default function PendingPage({ userData }) {
   return (
     <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', maxWidth: '500px', margin: '2rem auto' }}>
-      <h2>Action Required</h2>
+      <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+        Membership Checkpoint
+      </div>
+      <h2>Pending Circle Approval</h2>
+      <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', lineHeight: '1.55' }}>
+        Your profile is created. The final step is admin approval after the agreement and wallet requirement are confirmed.
+      </p>
       <div style={{ marginTop: '1.5rem', textAlign: 'left', background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '8px' }}>
         <p>Your account is currently <strong>Pending</strong>.</p>
         <ul style={{ marginTop: '1rem', paddingLeft: '1.5rem', listStyle: 'disc' }}>

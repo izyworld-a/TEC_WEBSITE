@@ -3,6 +3,7 @@ import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot, where, doc } from 'firebase/firestore';
 import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser, FiDollarSign } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
+import { CircleStatusChip, LiveMetricCard, WeekIdentityChip } from '../components/ProductUI';
 
 export default function LiveFeedPage({ user, userData }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -179,40 +180,70 @@ export default function LiveFeedPage({ user, userData }) {
     return goal.userName?.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  return (
-    <div style={{ position: 'relative', minHeight: '100vh', width: '100%', padding: '0 2rem 4rem' }}>
-      
-      {/* Blurred Background Elements */}
-      <div style={{ position: 'fixed', top: '10%', left: '5%', width: '300px', height: '300px', background: 'var(--primary)', filter: 'blur(150px)', opacity: 0.1, zIndex: -1 }}></div>
-      <div style={{ position: 'fixed', bottom: '10%', right: '5%', width: '400px', height: '400px', background: 'var(--secondary)', filter: 'blur(150px)', opacity: 0.1, zIndex: -1 }}></div>
+  const pendingReviewCount = allGoals.filter(g =>
+    g.reviewStatus === 'pending' ||
+    g.reviewStatus === 'in_review' ||
+    g.tasks?.some(t => t.status === 'Completed' && (t.proofImage || t.proofText) && !t.reviewed)
+  ).length;
 
+  const fullyVerifiedCount = allGoals.filter(g =>
+    g.tasks?.length >= 3 &&
+    g.tasks.slice(0, 3).every(t => t.reviewed && t.adminAction === 'approved' && t.status === 'Completed')
+  ).length;
+
+  const nextDeadline = timeLeft.setup && timeLeft.setup !== 'EXPIRED'
+    ? timeLeft.setup
+    : timeLeft.completion && timeLeft.completion !== 'EXPIRED'
+      ? timeLeft.completion
+      : 'No active deadline';
+
+  const nextDeadlineLabel = timeLeft.setup && timeLeft.setup !== 'EXPIRED'
+    ? 'Setup closes in'
+    : timeLeft.completion && timeLeft.completion !== 'EXPIRED'
+      ? 'Completion closes in'
+      : 'Week is open';
+
+  return (
+    <div className="tec-live-page" style={{ position: 'relative', minHeight: '100vh', width: '100%', padding: '0 2rem 4rem' }}>
       {/* Main Title Area */}
-      <div style={{ marginBottom: '3rem', marginTop: '2rem' }}>
-        <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '0.5rem' }}>TEC Accountability</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Track, Execute, Complete: Watch the community grow in real time.</p>
+      <div className="tec-live-heading" style={{ marginBottom: '2rem', marginTop: '2rem' }}>
+        <div className="tec-live-heading-chips">
+          <CircleStatusChip>Live Execution Board</CircleStatusChip>
+          <WeekIdentityChip weekId={selectedWeekId} mode="live" />
+        </div>
+        <h2 style={{ fontSize: '2.5rem', fontWeight: '900', marginBottom: '0.5rem', letterSpacing: 0 }}>This week's receipts</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem' }}>See who declared, who submitted proof, and what still needs review.</p>
       </div>
 
       {/* Stats Section */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-        {[
-          { label: 'Active Tasks', value: activeTasks, icon: <FiZap />, trend: '+12%', color: '#6366f1' },
-          { label: 'Team Members', value: userCount, icon: <FiUsers />, trend: '+2', color: '#a855f7' },
-          { label: 'Completion Rate', value: `${completionRate}%`, icon: <FiTrendingUp />, trend: '+5%', color: '#ec4899' },
-          { label: 'Avg. Time', value: `${avgTime}h`, icon: <FiClock />, trend: '-15%', color: '#3b82f6' }
-        ].map((stat, idx) => (
-          <div key={idx} className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${stat.color}22`, color: stat.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>
-                {stat.icon}
-              </div>
-              <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: stat.trend.startsWith('+') ? '#10b981' : '#f43f5e' }}>{stat.trend}</span>
-            </div>
-            <div>
-              <div style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '0.25rem' }}>{stat.value}</div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{stat.label}</div>
-            </div>
-          </div>
-        ))}
+      <div className="tec-live-metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '3rem' }}>
+        <LiveMetricCard
+          label="Goals submitted"
+          value={allGoals.length}
+          detail={`${userCount} members`}
+          icon={<FiTarget />}
+        />
+        <LiveMetricCard
+          label="Active tasks"
+          value={activeTasks}
+          detail={`${completionRate}% verified`}
+          icon={<FiZap />}
+          tone="green"
+        />
+        <LiveMetricCard
+          label="Awaiting review"
+          value={pendingReviewCount}
+          detail={`${fullyVerifiedCount} fully verified`}
+          icon={<FiShield />}
+          tone="amber"
+        />
+        <LiveMetricCard
+          label={nextDeadlineLabel}
+          value={nextDeadline}
+          detail="Deadline"
+          icon={<FiClock />}
+          tone="slate"
+        />
       </div>
       {/* ── Partner Assignment Popup ── */}
       {myPairing && showPartnerModal && !partnerDismissed && !myPairing.teamRewarded && (
