@@ -24,17 +24,33 @@ app.get('/', (req, res) => {
 
 // Diagnostic endpoint to verify environment keys and test Gemini execution live
 app.get('/diag', async (req, res) => {
-  const { generateFacilitatorResponse } = require('./services/geminiEngine');
-  let geminiTest = null;
-  let geminiError = null;
+  const axios = require('axios');
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  let directGeminiResult = null;
+  let directGeminiError = null;
+
   try {
-    geminiTest = await generateFacilitatorResponse({
+    const geminiRes = await axios.post(url, {
+      contents: [{ role: 'user', parts: [{ text: 'Respond with: Gemini is working 100%' }] }]
+    }, { timeout: 10000 });
+    directGeminiResult = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  } catch (err) {
+    directGeminiError = err?.response?.data || err.message;
+  }
+
+  const { generateFacilitatorResponse } = require('./services/geminiEngine');
+  let facilitatorResult = null;
+  try {
+    facilitatorResult = await generateFacilitatorResponse({
       userId: '+2348164771958',
       incomingMessage: 'Testing milestone update',
       hasImage: false
     });
   } catch (err) {
-    geminiError = err?.response?.data || err.message;
+    facilitatorResult = err?.response?.data || err.message;
   }
 
   res.json({
@@ -43,11 +59,12 @@ app.get('/diag', async (req, res) => {
       metaTokenPrefix: (process.env.META_ACCESS_TOKEN || '').slice(0, 10),
       hasGeminiKey: !!process.env.GEMINI_API_KEY,
       geminiKeyPrefix: (process.env.GEMINI_API_KEY || '').slice(0, 8),
-      geminiModel: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+      geminiModel: model,
       phoneNumberId: process.env.PHONE_NUMBER_ID
     },
-    geminiResult: geminiTest,
-    geminiError
+    directGeminiResult,
+    directGeminiError,
+    facilitatorResult
   });
 });
 
