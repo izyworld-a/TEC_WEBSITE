@@ -2,19 +2,20 @@ const axios = require('axios');
 const admin = require('firebase-admin');
 
 const MASTER_SYSTEM_INSTRUCTION = `You are the Execution Circle Facilitator for TEC Weekly.
-Your persona is disciplined, high-agency, concise, and focused on radical accountability.
-Your primary role is to evaluate member progress, reinforce commitment to personal milestones, and maintain execution momentum.
+You are in a direct 1-on-1 WhatsApp chat with an active community member.
+Your persona is disciplined, high-agency, direct, and focused on radical accountability.
 
-Scoring Constraints & Rules:
+COMMUNICATION DIRECTIVES:
+- ALWAYS address the member directly in the second person ("you", "your").
+- NEVER speak about the member in third person (never say "prompt them", "the user", or output evaluator instructions).
+- Output ONLY the direct WhatsApp message to send to the member.
+- Acknowledge their discipline or call out slacking with actionable next steps.
+- Keep replies punchy and optimal for WhatsApp chat (under 100 words).
+
+SCORING RULES (Reference when evaluating updates):
 - +10 Points: Awarded for confirmed completion of a weekly goal milestone.
 - +5 Points: Awarded for providing visual proof (uploaded progress screenshots, photos, artifacts).
-- -2 Points: Deducted for missed deadlines or lack of update without prior notification.
-
-Tone & Style:
-- Professional, direct, encouraging yet radically accountable.
-- Ground your response in the member's specific bio, profession, and identity.
-- Acknowledge their discipline or call out slacking with actionable next steps.
-- Keep replies brief and optimal for WhatsApp chat (under 120 words).`;
+- -2 Points: Deducted for missed deadlines or lack of update without prior notification.`;
 
 /**
  * Queries the user document from Firestore matching their phone number or user ID.
@@ -57,7 +58,7 @@ async function getUserProfile(userId) {
   }
 
   return {
-    displayName: 'TEC Circle Member',
+    displayName: 'Circle Member',
     bio: 'Execution Circle Member',
     profession: 'Builder / Professional',
     socialHandles: {}
@@ -122,23 +123,24 @@ async function generateFacilitatorResponse({ userId, incomingMessage, hasImage =
     getCurrentGoal(userId)
   ]);
 
-  const socialsString = profile.socialHandles
-    ? (typeof profile.socialHandles === 'object' ? JSON.stringify(profile.socialHandles) : String(profile.socialHandles))
-    : 'None listed';
+  const memberName = profile.displayName || profile.name || 'Member';
+  const memberRole = profile.profession || 'Professional';
+  const currentGoalTitle = currentGoal.title || currentGoal.description || 'Weekly Milestones';
 
-  const userContextText = [
-    `Member: ${profile.displayName || profile.name || 'Circle Member'}`,
-    `Profession: ${profile.profession || 'Professional'}`,
-    `Bio: ${profile.bio || 'Active Member'}`,
-    `Handles: ${socialsString}`,
-    `Current Goal: ${currentGoal.title || currentGoal.description || 'Weekly Milestones'}`,
-    `Submission Type: ${hasImage ? 'Visual Proof Attached (+5 Points candidate)' : 'Text Status Update'}`,
+  const userPrompt = [
+    `Member Profile: ${memberName} (${memberRole})`,
+    `Current Goal: ${currentGoalTitle}`,
+    `Visual Proof Attached: ${hasImage ? 'Yes (+5 Points eligible)' : 'No'}`,
     imageUrl ? `Proof Image URL: ${imageUrl}` : '',
-    `Incoming Message: ${incomingMessage || (hasImage ? '[Visual Evidence Uploaded]' : '[Empty Update]')}`
+    ``,
+    `The member just sent you this message on WhatsApp:`,
+    `"${incomingMessage || (hasImage ? '[Attached an image proof of work]' : '')}"`,
+    ``,
+    `Respond directly to ${memberName} on WhatsApp as their Execution Circle Facilitator.`
   ].filter(Boolean).join('\n');
 
-  // Google recommended model is gemini-3.6-flash or gemini-3.8-flash
-  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  // Use gemini-flash-latest for reliable, sub-second responses
+  const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
 
   const payload = {
@@ -148,17 +150,17 @@ async function generateFacilitatorResponse({ userId, incomingMessage, hasImage =
     contents: [
       {
         role: 'user',
-        parts: [{ text: userContextText }]
+        parts: [{ text: userPrompt }]
       }
     ],
     generationConfig: {
-      temperature: 0.4,
+      temperature: 0.5,
       maxOutputTokens: 250
     }
   };
 
   try {
-    console.log(`[GeminiEngine] Querying Gemini model (${model}) for user ${userId}...`);
+    console.log(`[GeminiEngine] Generating facilitator reply using ${model}...`);
     const res = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 15000
@@ -168,15 +170,15 @@ async function generateFacilitatorResponse({ userId, incomingMessage, hasImage =
     const reply = candidate?.content?.parts?.[0]?.text;
 
     if (reply) {
-      console.log(`[GeminiEngine] Generated response: "${reply.trim().slice(0, 80)}..."`);
+      console.log(`[GeminiEngine] Generated response: "${reply.trim().slice(0, 100)}..."`);
       return reply.trim();
     }
     throw new Error('No reply text generated by Gemini');
   } catch (err) {
     console.error('[GeminiEngine] Error calling Gemini API:', err?.response?.data || err.message);
     return hasImage
-      ? `Visual proof verified and cataloged (+5 Points). Outstanding execution, ${profile.displayName || 'Member'}. Keep pushing!`
-      : `Update logged. Focus on your deadline and maintain consistent output.`;
+      ? `Visual proof verified and cataloged (+5 Points). Outstanding execution, ${memberName}. Keep pushing!`
+      : `Update logged, ${memberName}. Let me know the specific milestones you completed today!`;
   }
 }
 
