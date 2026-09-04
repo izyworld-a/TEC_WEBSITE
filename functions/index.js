@@ -3,7 +3,20 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
-  admin.initializeApp();
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log('[Firebase] Admin initialized with Service Account.');
+    } catch (e) {
+      console.error('[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT:', e.message);
+      admin.initializeApp();
+    }
+  } else {
+    admin.initializeApp();
+  }
 }
 
 const {
@@ -68,26 +81,34 @@ async function handleWhatsAppWebhook(req, res) {
     }
 
     const payload = req.body;
+    console.log('[Webhook] Received POST payload from Meta');
     const changeValue = payload.entry?.[0]?.changes?.[0]?.value;
     const message = changeValue?.messages?.[0];
+    const phoneNumberId = changeValue?.metadata?.phone_number_id || process.env.PHONE_NUMBER_ID;
 
     // Check if this is an incoming user message (and not a status receipt)
     if (message) {
       const userId = message.from; // User's WhatsApp phone number (E.164)
       const messageType = message.type;
-      const db = admin.firestore();
+      console.log(`[Webhook] Processing incoming ${messageType} message from ${userId} (Phone ID: ${phoneNumberId})...`);
 
       try {
         if (messageType === 'text') {
           const incomingText = message.text?.body || '';
 
-          // A. Store incoming message into 'messages' collection
-          await db.collection('messages').add({
-            userId,
-            text: incomingText,
-            rawMessageId: message.id,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-          });
+          // A. Store incoming message into 'messages' collection (Safe)
+          try {
+            const db = admin.firestore();
+            await db.collection('messages').add({
+              userId,
+              text: incomingText,
+              rawMessageId: message.id,
+              timestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[Webhook] Stored message in Firestore for ${userId}`);
+          } catch (dbErr) {
+            console.warn('[Webhook] Firestore write skipped/unavailable:', dbErr.message);
+          }
 
           // B. Trigger Gemini Conversational Engine & Reply
           const aiReply = await generateFacilitatorResponse({
@@ -97,7 +118,7 @@ async function handleWhatsAppWebhook(req, res) {
           });
 
           if (aiReply) {
-            await sendMetaTextMessage(userId, aiReply);
+            await sendMetaTextMessage(userId, aiReply, phoneNumberId);
           }
 
         } else if (messageType === 'image') {
@@ -105,29 +126,43 @@ async function handleWhatsAppWebhook(req, res) {
           const caption = message.image?.caption || '';
 
           // A. Two-step media retrieval: Meta Graph API -> Cloudinary
-          const uploadRes = await fetchAndUploadMedia(mediaId);
+          let imageUrl = null;
+          let publicId = null;
+          try {
+            const uploadRes = await fetchAndUploadMedia(mediaId);
+            imageUrl = uploadRes.secure_url;
+            publicId = uploadRes.public_id;
+          } catch (mediaErr) {
+            console.error('[Webhook] Error streaming media to Cloudinary:', mediaErr.message);
+          }
 
-          // B. Store media submission into 'updates' collection
-          await db.collection('updates').add({
-            userId,
-            imageUrl: uploadRes.secure_url,
-            cloudinaryPublicId: uploadRes.public_id,
-            caption: caption,
-            type: 'image_update',
-            rawMessageId: message.id,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-          });
+          // B. Store media submission into 'updates' collection (Safe)
+          try {
+            const db = admin.firestore();
+            await db.collection('updates').add({
+              userId,
+              imageUrl: imageUrl,
+              cloudinaryPublicId: publicId,
+              caption: caption,
+              type: 'image_update',
+              rawMessageId: message.id,
+              timestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[Webhook] Stored image update in Firestore for ${userId}`);
+          } catch (dbErr) {
+            console.warn('[Webhook] Firestore write skipped/unavailable:', dbErr.message);
+          }
 
           // C. Trigger Gemini Conversational Engine with visual proof context & Reply
           const aiReply = await generateFacilitatorResponse({
             userId,
             incomingMessage: caption,
             hasImage: true,
-            imageUrl: uploadRes.secure_url
+            imageUrl: imageUrl
           });
 
           if (aiReply) {
-            await sendMetaTextMessage(userId, aiReply);
+            await sendMetaTextMessage(userId, aiReply, phoneNumberId);
           }
         }
       } catch (processingErr) {

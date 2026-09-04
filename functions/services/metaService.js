@@ -138,8 +138,8 @@ async function sendMetaTemplate(recipientId, templateName, components = []) {
  * @param {string} recipientId - WhatsApp user phone number
  * @param {string} text - Response text
  */
-async function sendMetaTextMessage(recipientId, text) {
-  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+async function sendMetaTextMessage(recipientId, text, phoneNumberIdOverride = null) {
+  const phoneNumberId = phoneNumberIdOverride || process.env.PHONE_NUMBER_ID;
   const accessToken = process.env.META_ACCESS_TOKEN;
   const url = `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`;
 
@@ -154,13 +154,21 @@ async function sendMetaTextMessage(recipientId, text) {
     }
   };
 
-  return await axios.post(url, payload, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    timeout: 10000
-  });
+  try {
+    console.log(`[MetaService] Sending WhatsApp reply to ${recipientId} via Phone ID ${phoneNumberId}...`);
+    const res = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000
+    });
+    console.log(`[MetaService] Reply successfully delivered to ${recipientId}:`, res.data);
+    return res;
+  } catch (err) {
+    console.error(`[MetaService] Error sending WhatsApp reply to ${recipientId}:`, err?.response?.data || err.message);
+    throw err;
+  }
 }
 
 /**
