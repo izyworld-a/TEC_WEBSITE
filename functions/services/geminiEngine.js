@@ -155,7 +155,7 @@ async function generateFacilitatorResponse({ userId, incomingMessage, hasImage =
     ],
     generationConfig: {
       temperature: 0.5,
-      maxOutputTokens: 250
+      maxOutputTokens: 1000
     }
   };
 
