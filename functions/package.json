@@ -1,0 +1,22 @@
+{
+  "name": "tec-weekly-functions",
+  "description": "TEC Weekly Meta WhatsApp Cloud API Webhook and Execution Circle AI Engine",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/test-runner.js"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^9.0.1",
+    "axios": "^1.7.9",
+    "cloudinary": "^2.5.1",
+    "dotenv": "^16.4.7",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.1"
+  }
+}

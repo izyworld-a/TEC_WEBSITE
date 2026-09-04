@@ -2,93 +2,159 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if the user is authenticated
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    // Helper function to check if the user is accessing their own data
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Get the user's Firestore document data (single get, reused)
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
-    // Helper to check if the logged in user is an Admin
-    // Uses a single get() call (null-safe) instead of exists() + get()
     function isAdmin() {
-      return isAuthenticated() && getUserData().get('isAdmin', false) == true;
+      return isAuthenticated() && (
+        getUserData().get('isAdmin', false) == true ||
+        getUserData().get('role', '') == 'admin'
+      );
     }
     
-    // Helper to check if the logged in user is a Moderator (or Admin)
     function isModerator() {
       return isAuthenticated() && (
         getUserData().get('isModerator', false) == true ||
-        getUserData().get('isAdmin', false) == true
+        getUserData().get('isAdmin', false) == true ||
+        getUserData().get('role', '') in ['moderator', 'admin']
       );
     }
 
-    // Rules for users collection
+    // ===============================================================
+    // Module 5: User Profiles
+    // ===============================================================
+    // Identity fields readable by authenticated members; private settings protected.
+    // Self-update allowed for owners; admin/moderator update allowed for account approvals & role management.
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isOwner(userId) || isAdmin() || isModerator();
+      allow delete: if isAdmin();
+    }
+    
+    // ===============================================================
+    // Module 5: Balances
+    // ===============================================================
+    // System / Moderator-only writes; users can read their own balance.
+    match /balances/{userId} {
+      allow read: if isOwner(userId) || isModerator() || isAdmin();
+      allow write: if isModerator() || isAdmin();
+    }
+    
+    // ===============================================================
+    // Module 5: Goals (Lock-Deadline Logic)
+    // ===============================================================
+    // Lock-deadline logic: regular user updates are blocked once request.time >= resource.data.deadline.
+    // Moderators and admins maintain operational override permissions.
+    match /goals/{goalId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if (
+        (request.auth.uid == resource.data.userId && request.time < resource.data.deadline) ||
+        isModerator() ||
+        isAdmin()
+      );
+      allow delete: if isAdmin() || isModerator();
     }
 
-    // Rules for weekly_goals collection
+    // ===============================================================
+    // Module 5: Updates Collection (Media / Progress Submissions)
+    // ===============================================================
+    // Inbound media submissions from WhatsApp webhook or portal.
+    match /updates/{updateId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.userId || 
+        isModerator() || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isModerator() || isAdmin();
+    }
+
+    // ===============================================================
+    // Inbound Messages Collection (WhatsApp Audit Log)
+    // ===============================================================
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.userId || 
+        isModerator() || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // Module 5: Moderator Controls
+    // ===============================================================
+    match /moderator_controls/{docId} {
+      allow read, write: if isModerator() || isAdmin();
+    }
+
+    // ===============================================================
+    // Existing Platform Collections (Preserved for React App)
+    // ===============================================================
+    
     match /weekly_goals/{goalId} {
       allow read: if isAuthenticated();
-      // Allow write if the goalId contains their userId or they are owner (e.g. userUid_weekId)
-      allow write: if isAuthenticated() && (goalId.matches('^' + request.auth.uid + '_.*') || isAdmin() || isModerator());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        isModerator() || 
+        (goalId.matches('^' + request.auth.uid + '_.*') || resource.data.userId == request.auth.uid)
+      );
+      allow delete: if isAdmin();
     }
 
-    // Rules for week_settings collection
     match /week_settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // Rules for attendance_sessions collection
     match /attendance_sessions/{sessionId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin() || isModerator();
     }
 
-    // Rules for attendance_records collection
     match /attendance_records/{recordId} {
       allow read: if isAuthenticated();
-      // Allow write if they are creating their own record or are admin
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
-    // Rules for announcements collection
     match /announcements/{announcementId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin() || isModerator();
     }
 
-    // Rules for system_data collection
     match /system_data/{documentId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // Rules for monthly_visions collection
     match /monthly_visions/{visionId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && (visionId.matches('^' + request.auth.uid + '_.*') || isAdmin());
     }
 
-    // Rules for daily_streaks collection
     match /daily_streaks/{streakId} {
       allow read: if isAuthenticated();
       allow write: if isOwner(streakId) || isAdmin();
     }
 
-    // Rules for weekly_pairings collection
     match /weekly_pairings/{pairingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin() || isModerator();
