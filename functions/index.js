@@ -96,6 +96,34 @@ async function handleWhatsAppWebhook(req, res) {
         if (messageType === 'text') {
           const incomingText = message.text?.body || '';
 
+          // Auto-linking: Check if member sent their registered email address
+          const emailRegex = /[\w.-]+@[\w.-]+\.[A-Za-z]{2,}/;
+          const emailMatch = incomingText.match(emailRegex);
+          if (emailMatch) {
+            const targetEmail = emailMatch[0].toLowerCase();
+            try {
+              const db = admin.firestore();
+              const userQuery = await db.collection('users').where('email', '==', targetEmail).limit(1).get();
+              if (!userQuery.empty) {
+                const userDoc = userQuery.docs[0];
+                await userDoc.ref.update({
+                  phoneNumber: userId,
+                  whatsappNumber: userId
+                });
+                const memberName = userDoc.data().displayName || userDoc.data().name || 'Member';
+                console.log(`[Webhook] Linked phone ${userId} to user ${userDoc.id} (${targetEmail})`);
+                await sendMetaTextMessage(
+                  userId,
+                  `✅ Account linked successfully!\n\nWelcome, ${memberName}. Your WhatsApp number is now connected to your TEC Weekly account (${targetEmail}). Every update and proof you send here will count toward your goals.`,
+                  phoneNumberId
+                );
+                return res.status(200).send('EVENT_RECEIVED');
+              }
+            } catch (linkErr) {
+              console.warn('[Webhook] Failed to link user by email:', linkErr.message);
+            }
+          }
+
           // A. Store incoming message into 'messages' collection (Safe)
           try {
             const db = admin.firestore();
