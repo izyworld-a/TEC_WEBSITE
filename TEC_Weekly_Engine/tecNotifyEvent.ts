@@ -1,0 +1,192 @@
+// TEC Weekly — Admin-triggered WhatsApp notifications
+// POST { type: "moderator_assigned", userId, weekId }              -> pings the newly assigned moderator
+// POST { type: "meeting_reminder", when: "Wednesday 9:00 PM", message? } -> sends to every opted-in member
+// Note: WhatsApp Business Cloud API cannot post into a personal/consumer WhatsApp group chat —
+// this is a hard Meta platform restriction, not a config gap. "Group" reminders are delivered as
+// individual 1:1 messages to every member with whatsappOptIn = true instead.
+
+const PHONE_NUMBER_ID = "1329337346933318"; // TEC Weekly production number +234 902 667 5879
+const GRAPH_VERSION = "v20.0";
+const FIRESTORE_BASE = "https://firestore.googleapis.com/v1/projects/tec-weekly-goals/databases/(default)/documents";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+// ---- Firebase service account assembly (same fragment scheme as tecWhatsAppWebhook / tecGoalReminders) ----
+const FRAG_NAMES = [
+  "FIREBASE_PRIVATE_KEY",
+  "FIREBASE_PRIVATE_KEY_2", "FIREBASE_PRIVATE_KEY_3", "FIREBASE_PRIVATE_KEY_4",
+  "FIREBASE_PRIVATE_KEY_5", "FIREBASE_PRIVATE_KEY_6", "FIREBASE_PRIVATE_KEY_7",
+  "FIREBASE_PRIVATE_KEY_8", "FIREBASE_PRIVATE_KEY_9", "FIREBASE_PRIVATE_KEY_10",
+  "FIREBASE_PRIVATE_KEY_11", "FIREBASE_PRIVATE_KEY_12", "FIREBASE_PRIVATE_KEY_13",
+  "FIREBASE_PRIVATE_KEY_14", "FIREBASE_PRIVATE_KEY_15", "FIREBASE_PRIVATE_KEY_16",
+  "FIREBASE_PRIVATE_KEY_17", "FIREBASE_PRIVATE_KEY_18", "FIREBASE_PRIVATE_KEY_19",
+  "FIREBASE_PRIVATE_KEY_20", "FIREBASE_PRIVATE_KEY_21", "FIREBASE_PRIVATE_KEY_22",
+  "FIREBASE_PRIVATE_KEY_23", "FIREBASE_PRIVATE_KEY_24",
+];
+
+const KEY_GLUE: string[] = [
+  "-----BEGIN PRIVATE KEY-----\\", "\\",
+  "+r6XlpOkrkN\\nbnwpVqK/rp0BxENSgcA1jN/", "/oGUJgyGs39C\\",
+  "/CZf//o\\nDr6IHNmEKgBEnMjmesqy+YpMRK+", "+\\", "\\",
+  "/zO3TZ7\\noIYDXLKVoV1XfR9aH/4iuCrWEs62JWi9MVj/w+zB9ZA+/lOK/TAn/CS+Q02VIdQD\\nTldvqC8Be/",
+  "+piOvxA3OZ2vnUJjpL+UcE4\\", "/kTMODjj4gqqNp2xEE4K\\nTUCHemcofQOb+WxQWq5NOoRkahKKiS/",
+  "\\n2+dL4OMW7DPpctvR8id+", "\\n6+",
+  "/622NRzuHaWrOEy5\\nHYBIZPh+5UEs2PwOPD+BXEwAm6fYFNOKkFrHq/SjxQt3JPxL+pM/HvAYrXTsIJ4p\\nn0Pcev1yZoNUce/XK/",
+  "+jxUUOHxepsczHwW\\", "/pdCtyAG1c\\nDYBCA4nDdyutif0wqYtr3/BjZQejRjmXX9dqqAcpdj/eZDnI9b8n1FVAz3BzoNda\\n7F7Dj0n/",
+  "+wss9/4OWyQWn6FjznSdYuk4V\\", "\\", "+", "\\", "\\", "\\", "/", "\\",
+  "+N7dGoJjcbMweIUAyUG/REcj463jv7jpHyRo\\", "\\nE8H3Zh5tkhyQdGE1rsdClw==\\n-----END PRIVATE KEY-----\\n",
+];
+
+function buildServiceAccount(): any | null {
+  const frags: (string | null)[] = FRAG_NAMES.map((n) => Deno.env.get(n));
+  if (frags.some((f) => !f) || KEY_GLUE.length !== frags.length + 1) return null;
+  let pkRaw = KEY_GLUE[0];
+  for (let i = 0; i < frags.length; i++) pkRaw += frags[i] + KEY_GLUE[i + 1];
+  try {
+    const privateKey = JSON.parse('"' + pkRaw + '"');
+    return {
+      type: "service_account",
+      project_id: "tec-weekly-goals",
+      private_key: privateKey,
+      client_email: "firebase-adminsdk-fbsvc@tec-weekly-goals.iam.gserviceaccount.com",
+      token_uri: "https://oauth2.googleapis.com/token",
+    };
+  } catch {
+    return null;
+  }
+}
+
+let cachedFbToken: { token: string; exp: number } | null = null;
+
+async function getFirebaseToken(): Promise<string | null> {
+  const sa = buildServiceAccount();
+  if (!sa) return null;
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    if (cachedFbToken && cachedFbToken.exp > now + 60) return cachedFbToken.token;
+    const b64url = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const claims = {
+      iss: sa.client_email,
+      scope: "https://www.googleapis.com/auth/datastore",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: now,
+      exp: now + 3600,
+    };
+    const unsigned = `${b64url({ alg: "RS256", typ: "JWT" })}.${b64url(claims)}`;
+    const pemBody = sa.private_key.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replace(/\s/g, "");
+    const der = Uint8Array.from(atob(pemBody), (c: string) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+    const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned)));
+    const sigB64 = btoa(String.fromCharCode(...sig)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const jwt = `${unsigned}.${sigB64}`;
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
+    });
+    const data: any = await res.json();
+    if (!data.access_token) throw new Error(data.error_description || "token exchange failed");
+    cachedFbToken = { token: data.access_token, exp: now + 3500 };
+    return data.access_token;
+  } catch (e: any) {
+    console.warn("[Firestore] token failed:", e?.message);
+    return null;
+  }
+}
+
+async function fsGetDoc(token: string, path: string): Promise<any | null> {
+  const res = await fetch(`${FIRESTORE_BASE}/${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const data: any = await res.json();
+  return data.fields ?? null;
+}
+
+async function fsRunQuery(token: string, structuredQuery: any): Promise<any[]> {
+  const res = await fetch(`${FIRESTORE_BASE}:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ structuredQuery }),
+  });
+  const rows: any[] = await res.json();
+  return (Array.isArray(rows) ? rows : [])
+    .filter((r: any) => r.document)
+    .map((r: any) => ({ id: r.document.name.split("/").pop(), fields: r.document.fields }));
+}
+
+async function sendMetaText(to: string, body: string): Promise<{ ok: boolean; err?: string }> {
+  try {
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${Deno.env.get("META_ACCESS_TOKEN") ?? ""}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { preview_url: false, body } }),
+    });
+    const data: any = await res.json();
+    if (data?.messages?.[0]?.id) return { ok: true };
+    return { ok: false, err: JSON.stringify(data).slice(0, 120) };
+  } catch (e: any) {
+    return { ok: false, err: e?.message ?? "network error" };
+  }
+}
+
+async function handleModeratorAssigned(token: string, userId: string, weekId: string) {
+  const fields = await fsGetDoc(token, `users/${userId}`);
+  if (!fields) return { ok: false, error: "user not found" };
+  const phone = (fields.whatsappNumber?.stringValue || fields.phoneNumber?.stringValue || "").replace(/[^0-9]/g, "");
+  if (!phone) return { ok: false, error: "no whatsapp number on file" };
+  const name = (fields.name?.stringValue || "there").trim().split(/\s+/)[0];
+  const msg = `\u{1F396}\uFE0F ${name}, you've been assigned *moderator* for Week ${weekId} on TEC Weekly!\n\nYou can now review and approve members' task proofs on the site. Reply here anytime if you need the current roster.`;
+  const r = await sendMetaText(phone, msg);
+  return { ok: r.ok, error: r.err };
+}
+
+async function handleMeetingReminder(token: string, when: string, customMessage?: string) {
+  const rows = await fsRunQuery(token, {
+    from: [{ collectionId: "users" }],
+    where: { fieldFilter: { field: { fieldPath: "whatsappOptIn" }, op: "EQUAL", value: { booleanValue: true } } },
+    limit: 500,
+  });
+  const msg = customMessage || `\u{1F5D3}\uFE0F Reminder: TEC Weekly meeting is today at ${when}. Be there and bring your updates!`;
+  let sent = 0, blocked = 0;
+  for (const { fields } of rows) {
+    const phone = (fields.whatsappNumber?.stringValue || "").replace(/[^0-9]/g, "");
+    if (!phone) continue;
+    const r = await sendMetaText(phone, msg);
+    if (r.ok) sent++; else blocked++;
+  }
+  return { ok: true, sent, blocked, total: rows.length };
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: CORS_HEADERS });
+
+  const body: any = await req.json().catch(() => ({}));
+  const token = await getFirebaseToken();
+  if (!token) {
+    return new Response(JSON.stringify({ ok: false, error: "Firestore token unavailable" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    });
+  }
+
+  try {
+    let result: any;
+    if (body.type === "moderator_assigned") {
+      result = await handleModeratorAssigned(token, body.userId, body.weekId || "");
+    } else if (body.type === "meeting_reminder") {
+      result = await handleMeetingReminder(token, body.when || "9:00 PM", body.message);
+    } else {
+      result = { ok: false, error: "unknown type" };
+    }
+    return new Response(JSON.stringify(result), { status: 200, headers: { "Content-Type": "application/json", ...CORS_HEADERS } });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ ok: false, error: e?.message ?? "unknown" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    });
+  }
+});
