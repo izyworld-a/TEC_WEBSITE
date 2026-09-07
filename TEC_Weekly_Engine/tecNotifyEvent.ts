@@ -1,6 +1,8 @@
 // TEC Weekly — Admin-triggered WhatsApp notifications
 // POST { type: "moderator_assigned", userId, weekId }              -> pings the newly assigned moderator
 // POST { type: "meeting_reminder", when: "Wednesday 9:00 PM", message? } -> sends to every opted-in member
+// POST { type: "deadline_update", weekId, setupDeadline?, completionDeadline? } -> broadcasts new deadlines
+// POST { type: "announcement", message, category? } -> broadcasts an announcement
 // Note: WhatsApp Business Cloud API cannot post into a personal/consumer WhatsApp group chat —
 // this is a hard Meta platform restriction, not a config gap. "Group" reminders are delivered as
 // individual 1:1 messages to every member with whatsappOptIn = true instead.
@@ -160,6 +162,53 @@ async function handleMeetingReminder(token: string, when: string, customMessage?
   return { ok: true, sent, blocked, total: rows.length };
 }
 
+async function handleDeadlineUpdate(token: string, weekId: string, setupDeadline?: string, completionDeadline?: string): Promise<any> {
+  const rows = await fsRunQuery(token, {
+    from: [{ collectionId: "users" }],
+    where: { fieldFilter: { field: { fieldPath: "whatsappOptIn" }, op: "EQUAL", value: { booleanValue: true } } },
+    limit: 500,
+  });
+  const fmt = (iso?: string) => {
+    if (!iso) return null;
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString("en-NG", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+    } catch { return iso; }
+  };
+  const parts: string[] = [];
+  const s = fmt(setupDeadline), c = fmt(completionDeadline);
+  if (s) parts.push(`\u{23F3} Set your goals by *${s}*`);
+  if (c) parts.push(`\u{1F4DD} Complete all tasks by *${c}*`);
+  if (!parts.length) return { ok: false, error: "no deadlines provided" };
+  const msg = `\u{23F0}\uFE0F *Deadline Update \u2014 Week ${weekId || "this week"}*\n\n${parts.join("\n")}\n\nCheck the TEC Weekly site for details.`;
+  let sent = 0, blocked = 0;
+  for (const { fields } of rows) {
+    const phone = (fields.whatsappNumber?.stringValue || "").replace(/[^0-9]/g, "");
+    if (!phone) continue;
+    const r = await sendMetaText(phone, msg);
+    if (r.ok) sent++; else blocked++;
+  }
+  return { ok: true, sent, blocked, total: rows.length };
+}
+
+async function handleAnnouncement(token: string, message: string, category?: string): Promise<any> {
+  const rows = await fsRunQuery(token, {
+    from: [{ collectionId: "users" }],
+    where: { fieldFilter: { field: { fieldPath: "whatsappOptIn" }, op: "EQUAL", value: { booleanValue: true } } },
+    limit: 500,
+  });
+  const label = category && category !== "General" ? ` (${category})` : "";
+  const msg = `\u{1F4E3} *TEC Weekly Announcement${label}*\n\n${message}`;
+  let sent = 0, blocked = 0;
+  for (const { fields } of rows) {
+    const phone = (fields.whatsappNumber?.stringValue || "").replace(/[^0-9]/g, "");
+    if (!phone) continue;
+    const r = await sendMetaText(phone, msg);
+    if (r.ok) sent++; else blocked++;
+  }
+  return { ok: true, sent, blocked, total: rows.length };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: CORS_HEADERS });
@@ -179,6 +228,10 @@ Deno.serve(async (req: Request) => {
       result = await handleModeratorAssigned(token, body.userId, body.weekId || "");
     } else if (body.type === "meeting_reminder") {
       result = await handleMeetingReminder(token, body.when || "9:00 PM", body.message);
+    } else if (body.type === "deadline_update") {
+      result = await handleDeadlineUpdate(token, body.weekId || "", body.setupDeadline, body.completionDeadline);
+    } else if (body.type === "announcement") {
+      result = await handleAnnouncement(token, String(body.message || "").slice(0, 900), body.category);
     } else {
       result = { ok: false, error: "unknown type" };
     }

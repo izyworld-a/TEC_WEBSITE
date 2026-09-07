@@ -232,7 +232,9 @@ export default function AdminDashboard() {
     }
 
     await addDoc(collection(db, 'announcements'), data);
+    const wa = await sendWhatsappNotification({ type: 'announcement', message: data.message, category: data.type });
     setNewAnnouncement({ message: '', type: 'General', assignedUserId: '' });
+    alert('Announcement posted.' + (wa?.ok ? ` WhatsApp sent to ${wa.sent ?? 0} member(s).` : ' (WhatsApp broadcast pending — no opted-in members found.)'));
   };
 
   const handleToggleAnnouncement = async (id, current) => {
@@ -411,7 +413,8 @@ export default function AdminDashboard() {
       setupDeadline,
       updatedAt: serverTimestamp()
     }, { merge: true });
-    alert('Goal Setting Deadline updated.');
+    const wa = await sendWhatsappNotification({ type: 'deadline_update', weekId: currentWeekId, setupDeadline });
+    alert('Goal Setting Deadline updated.' + (wa?.ok ? ` WhatsApp sent to ${wa.sent ?? 0} member(s).` : ' (WhatsApp pending — no opted-in members found.)'));
   };
 
   const handleUpdateCompletion = async () => {
@@ -420,7 +423,8 @@ export default function AdminDashboard() {
       completionDeadline,
       updatedAt: serverTimestamp()
     }, { merge: true });
-    alert('Completion Deadline updated.');
+    const wa = await sendWhatsappNotification({ type: 'deadline_update', weekId: currentWeekId, completionDeadline });
+    alert('Completion Deadline updated.' + (wa?.ok ? ` WhatsApp sent to ${wa.sent ?? 0} member(s).` : ' (WhatsApp pending — no opted-in members found.)'));
   };
 
   const handleCancelSetup = async () => {
