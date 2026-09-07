@@ -7,6 +7,24 @@ import {
 import { FiUsers, FiDollarSign, FiClock, FiCheckCircle, FiXCircle, FiFileText, FiSettings, FiTrash2, FiBell, FiStar } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 
+
+// ---- WhatsApp notifications via Base44 backend function ----
+const NOTIFY_ENDPOINT = 'https://velo-af3ea2dd.base44.app/functions/tecNotifyEvent';
+
+async function sendWhatsappNotification(payload) {
+  try {
+    const res = await fetch(NOTIFY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error('WhatsApp notify failed:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers]         = useState([]);
@@ -27,6 +45,9 @@ export default function AdminDashboard() {
 
   // Moderator state
   const [moderatorUserId, setModeratorUserId] = useState('');
+
+  // Meeting reminder state
+  const [meetingSending, setMeetingSending] = useState(null); // 'wed' | 'sun' | null
 
   // System Wallet state
   const [systemWallet, setSystemWallet] = useState(0);
@@ -160,7 +181,8 @@ export default function AdminDashboard() {
         updatedAt: serverTimestamp()
       }, { merge: true });
       await updateDoc(doc(db, 'users', userId), { isModerator: true, moderatorWeekId: currentWeekId });
-      alert(`${u.name} has been assigned as moderator for this week.`);
+      const wa = await sendWhatsappNotification({ type: 'moderator_assigned', userId, weekId: currentWeekId });
+      alert(`${u.name} has been assigned as moderator for this week.` + (wa?.ok ? ' WhatsApp notification sent.' : ' (WhatsApp notification pending \u2014 member may not have a number on file yet.)'));
     } catch (err) {
       console.error(err);
       alert('Error assigning moderator.');
@@ -220,6 +242,23 @@ export default function AdminDashboard() {
   const handleDeleteAnnouncement = async (id) => {
     if (!window.confirm('Delete this announcement?')) return;
     await deleteDoc(doc(db, 'announcements', id));
+  };
+
+  // ── WhatsApp Meeting Reminders ─────────────────────────────────────────────
+  const handleSendMeetingReminder = async (which) => {
+    const when = which === 'wed' ? 'Wednesday 9:00 PM (Midweek Meeting)' : 'Sunday 9:00 PM (Weekly Review Meeting)';
+    if (!window.confirm(`Send a WhatsApp meeting reminder to ALL opted-in members?\n\n${when}`)) return;
+    setMeetingSending(which);
+    try {
+      const result = await sendWhatsappNotification({ type: 'meeting_reminder', when });
+      if (result?.ok) {
+        alert(`Meeting reminder sent to ${result.sent ?? 0} member(s).` + (result.blocked ? ` (${result.blocked} failed)` : ''));
+      } else {
+        alert('Reminder failed: ' + (result?.error || 'unknown error'));
+      }
+    } finally {
+      setMeetingSending(null);
+    }
   };
 
   // ── User Management ────────────────────────────────────────────────────────
@@ -1341,6 +1380,30 @@ export default function AdminDashboard() {
             <div>
               <h2 style={{ margin: 0 }}>Announcements</h2>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Post scrolling announcements visible to all users on every page.</p>
+            </div>
+          </div>
+
+          {/* WhatsApp Meeting Reminders */}
+          <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem' }}>
+            <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem', fontWeight: '700' }}>💬 WhatsApp Meeting Reminders</h3>
+            <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Send a meeting reminder to every member who opted in to WhatsApp updates.</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleSendMeetingReminder('wed')}
+                disabled={!!meetingSending}
+                style={{ padding: '0.6rem 1.25rem' }}
+              >
+                {meetingSending === 'wed' ? 'Sending…' : '📅 Wednesday 9PM Midweek Meeting'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => handleSendMeetingReminder('sun')}
+                disabled={!!meetingSending}
+                style={{ padding: '0.6rem 1.25rem' }}
+              >
+                {meetingSending === 'sun' ? 'Sending…' : '📅 Sunday 9PM Weekly Review'}
+              </button>
             </div>
           </div>
 

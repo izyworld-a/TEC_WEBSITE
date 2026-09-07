@@ -7,6 +7,14 @@ import { FiCamera, FiAlertCircle, FiSave, FiDollarSign, FiShield, FiTrendingUp, 
 import { onSnapshot } from 'firebase/firestore';
 import { getWeekId } from '../utils/weekUtils';
 
+
+const normalizeWhatsApp = (raw) => {
+  let digits = (raw || '').replace(/\D/g, '');
+  if (digits.startsWith('2340')) digits = '234' + digits.slice(4);
+  else if (digits.startsWith('0')) digits = '234' + digits.slice(1);
+  return digits;
+};
+
 export default function Dashboard({ user, userData }) {
   const [activeTab, setActiveTab] = useState('goals');
 
@@ -16,6 +24,11 @@ export default function Dashboard({ user, userData }) {
   const [userCountry, setUserCountry] = useState(userData?.country || '');
   const [profession, setProfession] = useState(userData?.profession || '');
   const [bio, setBio] = useState(userData?.bio || '');
+  const [whatsappNumber, setWhatsappNumber] = useState(userData?.whatsappNumber || userData?.phoneNumber || '');
+  useEffect(() => {
+    const existing = userData?.whatsappNumber || userData?.phoneNumber || '';
+    if (existing) setWhatsappNumber(existing);
+  }, [userData?.whatsappNumber, userData?.phoneNumber]);
   const [socials, setSocials] = useState(userData?.socials || { twitter: '', instagram: '', linkedin: '', github: '' });
   const [profilePic, setProfilePic] = useState(userData?.profilePicUrl || '');
   const [uploading, setUploading] = useState(false);
@@ -343,9 +356,15 @@ export default function Dashboard({ user, userData }) {
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
     setProfileMsg('');
+    const waNumber = normalizeWhatsApp(whatsappNumber);
+    if (waNumber.length < 10) {
+      setProfileMsg('Please enter a valid WhatsApp number (e.g. 08012345678).');
+      return;
+    }
     try {
       await updateDoc(doc(db, "users", user.uid), {
         name, state: userState, country: userCountry, profession, bio,
+        whatsappNumber: waNumber, phoneNumber: waNumber, whatsappOptIn: true,
         socials: {
           twitter: socials.twitter || '',
           instagram: socials.instagram || '',
@@ -1369,6 +1388,12 @@ export default function Dashboard({ user, userData }) {
             <div className="input-group">
               <label>Bio <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>(Short description, shown under your name)</span></label>
               <textarea className="input-field" rows="2" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell the community a little about yourself..." style={{ resize: 'vertical' }} />
+            </div>
+
+            <h3 style={{ margin: '1.5rem 0 1rem', fontWeight: '700', fontSize: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>WhatsApp Updates <span style={{ fontSize: '0.75rem', fontWeight: '400', color: 'var(--text-secondary)' }}>(goal reminders &amp; accountability alerts)</span></h3>
+            <div className="input-group">
+              <label>WhatsApp Number <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>(we message this number with your weekly goals, deadlines and check-in reminders)</span></label>
+              <input type="tel" className="input-field" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="08012345678 or +2348012345678" required />
             </div>
 
             <h3 style={{ margin: '1.5rem 0 1rem', fontWeight: '700', fontSize: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Social Media Handles <span style={{ fontSize: '0.75rem', fontWeight: '400', color: 'var(--text-secondary)' }}>(shown when someone views your profile)</span></h3>

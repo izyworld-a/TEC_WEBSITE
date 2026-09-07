@@ -27,6 +27,7 @@
         "source": "**",
         "destination": "/index.html"
       }
-    ]
+    ],
+    "site": "tec-weekly-goals"
   }
 }

@@ -106,9 +106,18 @@ By signing below, you acknowledge that: You fully understand the expectations of
 
 Final Statement: “We don’t plan. We execute.”`;
 
+
+const normalizeWhatsApp = (raw) => {
+  let digits = (raw || '').replace(/\D/g, '');
+  if (digits.startsWith('2340')) digits = '234' + digits.slice(4);
+  else if (digits.startsWith('0')) digits = '234' + digits.slice(1);
+  return digits;
+};
+
 export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -166,6 +175,12 @@ export default function Register() {
       return;
     }
 
+    const waNumber = normalizeWhatsApp(whatsappNumber);
+    if (waNumber.length < 10) {
+      setError('Please enter a valid WhatsApp number (e.g. 08012345678 or +2348012345678).');
+      return;
+    }
+
     if (!acceptedTerms || !signatureData) {
       setError('Please click the button above to read, sign, and accept the Terms & Conditions before signing up.');
       setShowModal(true);
@@ -192,6 +207,9 @@ export default function Register() {
         status: 'Pending', // Requires Admin Approval
         walletBalance: 0, // Must be funded manually by Admin
         hasSignedTerms: true,
+        whatsappNumber: waNumber,
+        phoneNumber: waNumber,
+        whatsappOptIn: true,
         signatureUrl: signatureData,
         createdAt: new Date().toISOString()
       });
@@ -241,6 +259,18 @@ export default function Register() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="john@example.com"
+          />
+        </div>
+        
+        <div className="input-group">
+          <label>WhatsApp Number <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>(for goal reminders &amp; accountability updates)</span></label>
+          <input 
+            type="tel" 
+            className="input-field" 
+            required 
+            value={whatsappNumber}
+            onChange={(e) => setWhatsappNumber(e.target.value)}
+            placeholder="08012345678 or +2348012345678"
           />
         </div>
         
