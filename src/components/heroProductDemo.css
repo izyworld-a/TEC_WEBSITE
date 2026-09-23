@@ -1,0 +1,431 @@
+/* ============================================================
+   TEC hero product demo: animated Execution Board walkthrough
+   (make.com style ghost cursor, loops every 14s)
+   ============================================================ */
+
+.tpd-stage {
+  position: relative;
+  width: 100%;
+  max-width: 540px;
+  margin-inline: auto;
+}
+
+.tpd-glow {
+  position: absolute;
+  inset: -18% -10%;
+  background:
+    radial-gradient(45% 55% at 75% 20%, rgba(81, 70, 229, 0.22), transparent 70%),
+    radial-gradient(40% 50% at 20% 85%, rgba(15, 159, 110, 0.12), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---------- window ---------- */
+
+.tpd-window {
+  position: relative;
+  z-index: 1;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #12163a 0%, #0d1030 100%);
+  border: 1px solid rgba(124, 111, 240, 0.22);
+  box-shadow:
+    0 40px 80px -24px rgba(17, 15, 63, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.tpd-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(124, 111, 240, 0.16);
+}
+
+.tpd-dots { display: flex; gap: 5px; }
+.tpd-dots i { width: 8px; height: 8px; border-radius: 50%; }
+.tpd-dots i:nth-child(1) { background: #ff5f57; }
+.tpd-dots i:nth-child(2) { background: #febc2e; }
+.tpd-dots i:nth-child(3) { background: #28c840; }
+
+.tpd-title {
+  flex: 1;
+  text-align: center;
+  color: #8f8fc4;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}
+
+.tpd-weekchip {
+  font-size: 10px;
+  color: #c3c3ee;
+  background: rgba(81, 70, 229, 0.35);
+  border: 1px solid rgba(124, 111, 240, 0.4);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ---------- header ---------- */
+
+.tpd-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px 4px;
+}
+
+.tpd-eyebrow {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #8f8fc4;
+}
+
+.tpd-header strong { font-size: 16px; color: #f0f0ff; }
+
+.tpd-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #3ddc97;
+  background: rgba(15, 159, 110, 0.15);
+  border: 1px solid rgba(15, 159, 110, 0.35);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.tpd-live i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3ddc97;
+  animation: tpd-pulse 1.6s ease infinite;
+}
+
+@keyframes tpd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ---------- wallet ---------- */
+
+.tpd-wallet {
+  position: relative;
+  margin: 12px 16px 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(124, 111, 240, 0.18);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.tpd-wallet span:first-child { font-size: 11px; color: #8f8fc4; }
+.tpd-wallet strong { color: #f0f0ff; font-size: 15px; }
+.tpd-wallet small { flex-basis: 100%; font-size: 10px; color: #6d6da8; }
+
+.tpd-points-float {
+  position: absolute;
+  right: 12px;
+  top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #3ddc97;
+  opacity: 0;
+}
+
+.tpd-points-float.go { animation: tpd-float-up 2.4s ease forwards; }
+
+@keyframes tpd-float-up {
+  0% { opacity: 0; transform: translateY(4px); }
+  15% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(-6px); }
+}
+
+/* ---------- goals ---------- */
+
+.tpd-goals { padding: 12px 16px; display: grid; gap: 8px; }
+
+.tpd-goal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(124, 111, 240, 0.14);
+}
+
+.tpd-goal p { flex: 1; margin: 0; color: #d9d9f2; font-size: 13px; }
+
+.tpd-goal-idx {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(81, 70, 229, 0.25);
+  color: #b9b3f7;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tpd-status {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.tpd-status.done {
+  color: #3ddc97;
+  background: rgba(15, 159, 110, 0.15);
+  border: 1px solid rgba(15, 159, 110, 0.4);
+}
+
+.tpd-status.review {
+  color: #fbbf24;
+  background: rgba(217, 119, 6, 0.12);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+}
+
+.tpd-status.progress {
+  color: #b9b3f7;
+  background: rgba(81, 70, 229, 0.18);
+  border: 1px solid rgba(124, 111, 240, 0.4);
+}
+
+.tpd-status.verified {
+  color: #0b2e1f;
+  background: #22c55e;
+  border: 1px solid #22c55e;
+}
+
+.tpd-proof-btn {
+  font-size: 10px;
+  font-weight: 600;
+  color: #b9b3f7;
+  background: transparent;
+  border: 1px solid rgba(124, 111, 240, 0.45);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.tpd-proof-btn.done {
+  color: #3ddc97;
+  border-color: rgba(15, 159, 110, 0.5);
+  background: rgba(15, 159, 110, 0.12);
+}
+
+.tpd-goal-new {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(8px);
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  overflow: hidden;
+  transition: all 0.45s ease;
+}
+
+.tpd-goal-new.show {
+  max-height: 64px;
+  opacity: 1;
+  transform: none;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-width: 1px;
+}
+
+/* ---------- footer ---------- */
+
+.tpd-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px 14px;
+}
+
+.tpd-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #5146e5;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  box-shadow: 0 6px 16px -6px rgba(81, 70, 229, 0.7);
+  cursor: default;
+}
+
+.tpd-footer-note { font-size: 10px; color: #6d6da8; }
+
+/* ---------- add-goal popover ---------- */
+
+.tpd-popover {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 58px;
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  padding: 8px;
+  border-radius: 12px;
+  background: #1a1f4d;
+  border: 1px solid rgba(124, 111, 240, 0.35);
+  box-shadow: 0 20px 40px -18px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  transition: 0.28s ease;
+  pointer-events: none;
+}
+
+.tpd-popover.open { opacity: 1; transform: none; }
+
+.tpd-input {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(124, 111, 240, 0.2);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: #f0f0ff;
+  font-size: 12.5px;
+  min-height: 18px;
+}
+
+.tpd-caret {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: #8f7bff;
+  animation: tpd-blink 0.8s steps(1) infinite;
+  margin-left: 1px;
+}
+
+@keyframes tpd-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.tpd-submit {
+  background: #5146e5;
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: default;
+  transition: opacity 0.2s ease;
+}
+
+.tpd-submit.dim { opacity: 0.45; }
+
+/* ---------- toast ---------- */
+
+.tpd-toast {
+  position: absolute;
+  top: 52px;
+  right: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #12251c;
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  border-radius: 12px;
+  padding: 10px 14px;
+  opacity: 0;
+  transform: translateX(14px);
+  transition: 0.35s ease;
+  z-index: 5;
+}
+
+.tpd-toast.show { opacity: 1; transform: none; }
+
+.tpd-toast-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #0b2e1f;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.tpd-toast strong { display: block; color: #d7ffe9; font-size: 12px; }
+.tpd-toast small { color: #7fbf9d; font-size: 10px; }
+
+/* ---------- ghost cursor ---------- */
+
+.tpd-cursor {
+  position: absolute;
+  z-index: 20;
+  width: 22px;
+  height: 22px;
+  margin: -2px 0 0 -2px;
+  transition:
+    left 0.9s cubic-bezier(0.25, 0.7, 0.3, 1),
+    top 0.9s cubic-bezier(0.25, 0.7, 0.3, 1);
+  pointer-events: none;
+}
+
+.tpd-cursor svg {
+  display: block;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
+  transition: transform 0.12s ease;
+}
+
+.tpd-cursor.click svg { transform: scale(0.8); }
+
+.tpd-ripple {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid rgba(124, 111, 240, 0.8);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.25);
+}
+
+.tpd-cursor.click .tpd-ripple { animation: tpd-ripple 0.5s ease-out; }
+
+@keyframes tpd-ripple {
+  0% { opacity: 0.9; transform: translate(-50%, -50%) scale(0.25); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+}
+
+/* ---------- responsive & reduced motion ---------- */
+
+@media (max-width: 640px) {
+  .tpd-footer-note { display: none; }
+  .tpd-toast { top: 46px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tpd-cursor { display: none; }
+  .tpd-live i, .tpd-caret { animation: none; }
+}

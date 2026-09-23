@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
+import HeroProductDemo from '../components/HeroProductDemo';
 import logoImg from '../assets/Logo.png';
 import {
   FaArrowRight,
@@ -132,33 +133,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="tec-dashboard-preview" aria-label="TEC Weekly dashboard preview">
-            <div className="tec-preview-topbar">
-              <div>
-                <span className="tec-preview-eyebrow">Current Week</span>
-                <strong>Execution Board</strong>
-              </div>
-              <span className="tec-preview-badge">Live</span>
-            </div>
-            <div className="tec-preview-wallet">
-              <span>Wallet balance</span>
-              <strong>NGN 12,000</strong>
-              <small>Active member</small>
-            </div>
-            <div className="tec-preview-goals">
-              {['Ship portfolio update', 'Complete React module', 'Publish proof thread'].map((goal, index) => (
-                <div className="tec-preview-goal" key={goal}>
-                  <span>{index + 1}</span>
-                  <p>{goal}</p>
-                  <strong>{index === 2 ? 'Review' : 'Done'}</strong>
-                </div>
-              ))}
-            </div>
-            <div className="tec-preview-review">
-              <span>Moderator note</span>
-              <p>Proof accepted. Awaiting admin points.</p>
-            </div>
-          </div>
+                    <HeroProductDemo />
         </div>
       </section>
 
