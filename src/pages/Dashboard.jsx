@@ -1040,55 +1040,9 @@ export default function Dashboard({ user, userData }) {
         </div>
       </section>
 
-      <section className="member-execution-board" aria-label="Weekly execution summary">
-        <div className="member-commitment">
-          <span className="member-eyebrow">YOUR COMMITMENT</span>
-          <h2>{goalsSubmitted ? `${completedTasks} of ${plannedTasks} goals marked complete` : 'Set the work that matters this week.'}</h2>
-          <p>{goalsSubmitted ? 'Update each goal with progress and proof before the review window closes.' : 'Choose a small, concrete set of goals. Your commitments create the week’s scoreboard.'}</p>
-          <div className="member-progress-track" aria-label={`${weeklyProgress}% of goals marked complete`}>
-            <span style={{ width: `${weeklyProgress}%` }} />
-          </div>
-          <div className="member-progress-caption">
-            <span>{weeklyProgress}% marked complete</span>
-            <span>{weeklyPoints || 0} points this week</span>
-          </div>
-          <button onClick={() => setActiveTab('goals')} className="member-primary-action">
-            {goalsSubmitted ? 'Update goals' : 'Set weekly goals'} <span aria-hidden="true">→</span>
-          </button>
-        </div>
-        <aside className="member-checkpoint">
-          <span className="member-checkpoint-label">NEXT CHECKPOINT</span>
-          <strong>{nextCheckpointLabel}</strong>
-          <time>{nextCheckpointValue}</time>
-          <span className={isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'member-checkpoint-state overdue' : 'member-checkpoint-state'}>
-            {isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'Deadline passed' : 'Keep the week moving'}
-          </span>
-        </aside>
-      </section>
 
-      <section className="member-metrics" aria-label="Your member metrics">
-        <div className="member-metric">
-          <span>Wallet</span>
-          <strong>₦{(userData?.walletBalance || 0).toLocaleString()}</strong>
-          <small>Private balance</small>
-        </div>
-        <div className="member-metric">
-          <span>Lifetime points</span>
-          <strong>{(userData?.totalPoints || 0).toLocaleString()}</strong>
-          <small>Earned through execution</small>
-        </div>
-        <div className="member-metric">
-          <span>Daily rhythm</span>
-          <strong>{streakData.currentStreak || 0} <small>days</small></strong>
-          <small>{streakData.checkedInToday ? 'Checked in today' : 'Check in to extend it'}</small>
-        </div>
-        <div className="member-metric">
-          <span>Recognition</span>
-          <strong>{userData?.achievementStars || 0} <small>stars</small></strong>
-          <small>{userData?.consecutiveGoodWeeks || 0}/4 strong weeks</small>
-        </div>
-      </section>
-
+      <div className="member-layout">
+        <div className="member-main-col">
       <nav className="member-section-nav" aria-label="Member dashboard sections">
         <button onClick={() => setActiveTab('goals')} className={activeTab === 'goals' ? 'active' : ''}>Weekly goals</button>
         <button onClick={() => setActiveTab('vision')} className={activeTab === 'vision' ? 'active' : ''}>Monthly vision</button>
@@ -1856,6 +1810,59 @@ export default function Dashboard({ user, userData }) {
           )}
         </div>
       )}
+        </div>
+        <aside className="member-side-col" aria-label="Your week at a glance">
+        <section className="member-execution-board" aria-label="Weekly execution summary">
+          <div className="member-commitment">
+            <span className="member-eyebrow">YOUR COMMITMENT</span>
+            <h2>{goalsSubmitted ? `${completedTasks} of ${plannedTasks} goals marked complete` : 'Set the work that matters this week.'}</h2>
+            <p>{goalsSubmitted ? 'Update each goal with progress and proof before the review window closes.' : 'Choose a small, concrete set of goals. Your commitments create the week’s scoreboard.'}</p>
+            <div className="member-progress-track" aria-label={`${weeklyProgress}% of goals marked complete`}>
+              <span style={{ width: `${weeklyProgress}%` }} />
+            </div>
+            <div className="member-progress-caption">
+              <span>{weeklyProgress}% marked complete</span>
+              <span>{weeklyPoints || 0} points this week</span>
+            </div>
+            <button onClick={() => setActiveTab('goals')} className="member-primary-action">
+              {goalsSubmitted ? 'Update goals' : 'Set weekly goals'} <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <aside className="member-checkpoint">
+            <span className="member-checkpoint-label">NEXT CHECKPOINT</span>
+            <strong>{nextCheckpointLabel}</strong>
+            <time>{nextCheckpointValue}</time>
+            <span className={isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'member-checkpoint-state overdue' : 'member-checkpoint-state'}>
+              {isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'Deadline passed' : 'Keep the week moving'}
+            </span>
+          </aside>
+        </section>
+
+        <section className="member-metrics" aria-label="Your member metrics">
+          <div className="member-metric">
+            <span>Wallet</span>
+            <strong>₦{(userData?.walletBalance || 0).toLocaleString()}</strong>
+            <small>Private balance</small>
+          </div>
+          <div className="member-metric">
+            <span>Lifetime points</span>
+            <strong>{(userData?.totalPoints || 0).toLocaleString()}</strong>
+            <small>Earned through execution</small>
+          </div>
+          <div className="member-metric">
+            <span>Daily rhythm</span>
+            <strong>{streakData.currentStreak || 0} <small>days</small></strong>
+            <small>{streakData.checkedInToday ? 'Checked in today' : 'Check in to extend it'}</small>
+          </div>
+          <div className="member-metric">
+            <span>Recognition</span>
+            <strong>{userData?.achievementStars || 0} <small>stars</small></strong>
+            <small>{userData?.consecutiveGoodWeeks || 0}/4 strong weeks</small>
+          </div>
+        </section>
+
+        </aside>
+      </div>
     </div>
   );
 }
