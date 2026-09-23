@@ -4,50 +4,50 @@ import { auth } from '../firebase';
 import HeroProductDemo from '../components/HeroProductDemo';
 import logoImg from '../assets/Logo.png';
 import {
-  FaArrowRight,
-  FaBullseye,
-  FaCheck,
-  FaClock,
-  FaFileCircleCheck,
-  FaGlobe,
-  FaLocationDot,
-  FaPaperPlane,
-  FaPhone,
-  FaScaleUnbalanced,
-  FaShieldHalved,
-  FaUserGroup,
-  FaWallet,
-} from 'react-icons/fa6';
+  LuArrowRight,
+  LuCheck,
+  LuClock,
+  LuFileCheck,
+  LuGlobe,
+  LuMapPin,
+  LuPhone,
+  LuScale,
+  LuSend,
+  LuShieldCheck,
+  LuTarget,
+  LuUsers,
+  LuWallet,
+} from 'react-icons/lu';
 
 const workflowSteps = [
   {
     number: '01',
     title: 'Declare',
-    icon: <FaBullseye />,
+    icon: <LuTarget />,
     text: 'Members set at least three weekly goals before the setup deadline.',
   },
   {
     number: '02',
     title: 'Execute',
-    icon: <FaClock />,
+    icon: <LuClock />,
     text: 'The week is tracked around check-ins, partner pressure, and visible progress.',
   },
   {
     number: '03',
     title: 'Prove',
-    icon: <FaFileCircleCheck />,
+    icon: <LuFileCheck />,
     text: 'Every completed goal needs proof through a link, image, or clear evidence.',
   },
   {
     number: '04',
     title: 'Review',
-    icon: <FaShieldHalved />,
+    icon: <LuShieldCheck />,
     text: 'Moderators and admins verify submissions before points or penalties move.',
   },
   {
     number: '05',
     title: 'Reward',
-    icon: <FaWallet />,
+    icon: <LuWallet />,
     text: 'Points, wallet status, and team rewards make execution feel concrete.',
   },
 ];
@@ -122,7 +122,7 @@ export default function HomePage() {
             <div className="tec-hero-actions">
               <button onClick={handleCtaClick} className="tec-btn-primary">
                 <span>{currentUser ? 'Open my dashboard' : 'Enter this week'}</span>
-                <FaArrowRight size={14} />
+                <LuArrowRight size={14} />
               </button>
               <a href="#system" className="tec-btn-secondary">See the system</a>
             </div>
@@ -168,15 +168,15 @@ export default function HomePage() {
             </p>
             <div className="tec-proof-list">
               <div>
-                <FaCheck />
+                <LuCheck />
                 <span>Goal descriptions lock after submission.</span>
               </div>
               <div>
-                <FaCheck />
+                <LuCheck />
                 <span>Proof links and images stay attached to each task.</span>
               </div>
               <div>
-                <FaCheck />
+                <LuCheck />
                 <span>Moderators flag weak evidence before admin approval.</span>
               </div>
             </div>
@@ -237,7 +237,7 @@ export default function HomePage() {
 
       <section className="tec-statement-band fade-in">
         <div className="tec-container">
-          <FaScaleUnbalanced />
+          <LuScale />
           <h2>Your word to the circle is binding.</h2>
           <p>That line is more ownable than abstract professionalism, so the design now lets the product's culture speak.</p>
         </div>
@@ -252,7 +252,7 @@ export default function HomePage() {
 
             {formSubmitted ? (
               <div className="tec-success-message">
-                <FaCheck size={24} />
+                <LuCheck size={24} />
                 Thank you. Your message has been received.
               </div>
             ) : (
@@ -312,7 +312,7 @@ export default function HomePage() {
 
                 <button type="submit" className="tec-btn-primary tec-btn-full">
                   <span>Send Message</span>
-                  <FaPaperPlane size={14} />
+                  <LuSend size={14} />
                 </button>
               </form>
             )}
@@ -321,7 +321,7 @@ export default function HomePage() {
           <div className="tec-contact-details">
             <div className="tec-info-card">
               <div className="tec-info-icon-box">
-                <FaPhone />
+                <LuPhone />
               </div>
               <div>
                 <span>Direct Line</span>
@@ -331,7 +331,7 @@ export default function HomePage() {
 
             <div className="tec-info-card">
               <div className="tec-info-icon-box">
-                <FaGlobe />
+                <LuGlobe />
               </div>
               <div>
                 <span>Web Application</span>
@@ -343,7 +343,7 @@ export default function HomePage() {
 
             <div className="tec-info-card">
               <div className="tec-info-icon-box">
-                <FaLocationDot />
+                <LuMapPin />
               </div>
               <div>
                 <span>Operations</span>
@@ -353,7 +353,7 @@ export default function HomePage() {
 
             <div className="tec-meeting-badge">
               <div>
-                <FaUserGroup />
+                <LuUsers />
                 <span>Live attendance required</span>
               </div>
               <h4>Weekly Goal Meetings</h4>
