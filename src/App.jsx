@@ -8,11 +8,13 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ModeratorDashboard from './pages/ModeratorDashboard';
+import MembersPage from './pages/MembersPage';
+import GoalsInboxPage from './pages/GoalsInboxPage';
 import PendingPage from './pages/PendingPage';
 import ForgotPassword from './pages/ForgotPassword';
 import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getWeekId } from './utils/weekUtils';
 import { useNotifications } from './utils/useNotifications';
 
@@ -108,11 +110,12 @@ function App() {
 function AppContent({ user, userData, ProtectedRoute }) {
   const { pathname } = useLocation();
   const isHome = pathname === '/';
+  const isAdminRoute = pathname.startsWith('/admin');
 
   return (
-    <div className="app-container">
-      <Navbar user={user} userData={userData} />
-      <main className={isHome ? "main-content-home" : "main-content"}>
+    <div className={isAdminRoute ? "admin-app-container" : "app-container"}>
+      {!isAdminRoute && <Navbar user={user} userData={userData} />}
+      <main className={isHome ? "main-content-home" : (isAdminRoute ? "main-content-admin" : "main-content")}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
@@ -127,9 +130,21 @@ function AppContent({ user, userData, ProtectedRoute }) {
             </ProtectedRoute>
           } />
 
+          <Route path="/members" element={
+            <ProtectedRoute>
+              <MembersPage user={user} userData={userData} />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/goals-inbox" element={
+            <ProtectedRoute>
+              <GoalsInboxPage user={user} userData={userData} />
+            </ProtectedRoute>
+          } />
+
           <Route path="/admin" element={
             <ProtectedRoute requireAdmin={true}>
-              <AdminDashboard />
+              <AdminDashboard user={user} userData={userData} />
             </ProtectedRoute>
           } />
 
@@ -140,7 +155,7 @@ function AppContent({ user, userData, ProtectedRoute }) {
           } />
         </Routes>
       </main>
-      {!isHome && (
+      {!isHome && !isAdminRoute && (
         <footer style={{ 
           textAlign: 'center', 
           padding: '2rem', 

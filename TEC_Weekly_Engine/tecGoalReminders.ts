@@ -1,8 +1,12 @@
 // TEC Weekly — Goal Reminders & Accountability Alerts (scheduled)
-// GET  ?mode=dry -> preview the messages that would be sent (no sends)
+// GET  ?mode=dry -> preview the messages that would be sent (both text and template payloads)
+// GET  ?mode=dry&delivery=template -> preview template payloads
 // POST {}       -> run for real (called by the daily Base44 workflow; {"dry":true} previews)
+// POST {"delivery":"template"} -> run with direct template delivery
 // Reads Firestore (users / weekly_goals / week_settings / daily_streaks) and sends
-// WhatsApp goal reminders via the Meta Cloud API. Report is returned as JSON.
+// WhatsApp goal reminders via Meta Cloud API with seamless fallback to Meta Templates
+// (e.g. deadline_alert or META_REMINDER_TEMPLATE) upon 24-hour delivery window (Meta error 131047).
+// Report is returned as JSON.
 
 const PHONE_NUMBER_ID = "1329337346933318"; // TEC Weekly production number +234 902 667 5879
 const GRAPH_VERSION = "v20.0";
@@ -159,7 +163,10 @@ function firstName(full: string): string {
   return (full || "there").trim().split(/\s+/)[0];
 }
 
-async function sendMetaText(to: string, body: string): Promise<{ ok: boolean; err?: string }> {
+async function sendMetaText(
+  to: string,
+  body: string,
+): Promise<{ ok: boolean; err?: string; code?: number }> {
   try {
     const res = await fetch(
       `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`,
@@ -179,15 +186,132 @@ async function sendMetaText(to: string, body: string): Promise<{ ok: boolean; er
     );
     const data: any = await res.json();
     if (data?.messages?.[0]?.id) return { ok: true };
-    return { ok: false, err: data?.error?.code ? `${data.error.code}: ${(data.error.error_data?.details || data.error.message || "").slice(0, 90)}` : JSON.stringify(data).slice(0, 90) };
+    const code: number | undefined = data?.error?.code;
+    return {
+      ok: false,
+      code,
+      err: code
+        ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
+        : JSON.stringify(data).slice(0, 90),
+    };
   } catch (e: any) {
     return { ok: false, err: e?.message ?? "network error" };
   }
 }
 
-async function runReminders(dry: boolean) {
+async function sendMetaTemplate(
+  to: string,
+  templateName: string,
+  components: any[] = [],
+  languageCode = "en_US",
+): Promise<{ ok: boolean; err?: string; code?: number }> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${Deno.env.get("META_ACCESS_TOKEN") ?? ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to,
+          type: "template",
+          template: {
+            name: templateName,
+            language: { code: languageCode },
+            components,
+          },
+        }),
+      },
+    );
+    const data: any = await res.json();
+    if (data?.messages?.[0]?.id) return { ok: true };
+    const code: number | undefined = data?.error?.code;
+    return {
+      ok: false,
+      code,
+      err: code
+        ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
+        : JSON.stringify(data).slice(0, 90),
+    };
+  } catch (e: any) {
+    return { ok: false, err: e?.message ?? "network error" };
+  }
+}
+
+function is24HourWindowError(code?: number, err?: string): boolean {
+  if (code === 131047) return true;
+  if (!err) return false;
+  return /131047|re-engagement|24\s*hour/i.test(err);
+}
+
+function formatDeadline(isoOrStr?: string | null): string {
+  if (!isoOrStr) return "";
+  try {
+    const clean = String(isoOrStr).replace(" ", "T");
+    const d = new Date(clean);
+    if (!isNaN(d.getTime()) && (clean.includes("-") || clean.includes("T"))) {
+      return d.toLocaleString("en-NG", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "Africa/Lagos",
+      });
+    }
+  } catch {
+    // fallback
+  }
+  return String(isoOrStr);
+}
+
+function buildReminderComponents(
+  name: string,
+  isGoalSet: boolean,
+  progress: number,
+  setupDeadline?: string,
+  completionDeadline?: string,
+): any[] {
+  const memberName = firstName(name) || "Member";
+  let deadlineType = "";
+  let deadlineTime = "";
+
+  if (!isGoalSet) {
+    deadlineType = "Goal Setup Deadline";
+    deadlineTime = setupDeadline ? formatDeadline(setupDeadline) : "Sunday 11:59 PM";
+  } else if (progress >= 100) {
+    deadlineType = "Weekly Goal Milestone";
+    deadlineTime = completionDeadline ? formatDeadline(completionDeadline) : "Completed (100%)";
+  } else {
+    deadlineType = progress > 0 ? `Weekly Goal Progress (${progress}%)` : "Goal Completion Deadline";
+    deadlineTime = completionDeadline ? formatDeadline(completionDeadline) : "Sunday 11:59 PM";
+  }
+
+  return [
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: memberName },
+        { type: "text", text: deadlineType },
+        { type: "text", text: deadlineTime },
+      ],
+    },
+  ];
+}
+
+async function runReminders(dry: boolean, forceTemplate = false) {
   const token = await getFirebaseToken();
   if (!token) return { ok: false, error: "Firestore token unavailable" };
+
+  const envDelivery = (Deno.env.get("META_REMINDER_DELIVERY_MODE") || Deno.env.get("DELIVERY_MODE") || "").toLowerCase();
+  const envForce = (Deno.env.get("META_FORCE_TEMPLATE") || "").toLowerCase();
+  const useTemplate = forceTemplate || envDelivery === "template" || envForce === "true" || envForce === "1";
+  const templateName = Deno.env.get("META_REMINDER_TEMPLATE") || "deadline_alert";
+  const languageCode = Deno.env.get("META_REMINDER_LANG") || "en_US";
 
   const now = lagosNow();
   const today = now.toISOString().slice(0, 10);
@@ -205,7 +329,19 @@ async function runReminders(dry: boolean) {
     limit: 500,
   });
 
-  const report: any = { ok: true, weekId, today, optedIn: rows.length, sent: 0, blocked: 0, skipped: 0, results: [] };
+  const report: any = {
+    ok: true,
+    weekId,
+    today,
+    deliveryMode: useTemplate ? "template" : "text_with_template_fallback",
+    templateName,
+    optedIn: rows.length,
+    sent: 0,
+    fallbackSent: 0,
+    blocked: 0,
+    skipped: 0,
+    results: [],
+  };
 
   for (const { id, fields } of rows) {
     const name = sval(fields.name);
@@ -215,12 +351,12 @@ async function runReminders(dry: boolean) {
     const goal = await fsGetDoc(token, `weekly_goals/${id}_${weekId}`);
     const streak = await fsGetDoc(token, `daily_streaks/${id}`);
     const first = firstName(name);
+    const progress = goal ? parseInt(sval(goal.progress) || "0", 10) : 0;
 
     let msg = "";
     if (!goal) {
       msg = `\u2600\uFE0F Good morning ${first}! Week ${weekId} is live on TEC and your goals are not set yet.\n\nHead to the portal and lock in your weekly goals now${setupDeadline ? ` \u2014 setup deadline ${setupDeadline}` : ""}.\n\nExecution beats intention. \u{1F525}`;
     } else {
-      const progress = parseInt(sval(goal.progress) || "0", 10);
       const tasks: { desc: string; done: boolean }[] = [];
       const arr = goal.tasks?.arrayValue?.values ?? [];
       for (const t of arr.slice(0, 4)) {
@@ -241,37 +377,151 @@ async function runReminders(dry: boolean) {
       msg += `\n\nDon't forget today's check-in \u2014 protect that ${streakLen > 0 ? `${streakLen}-day ` : ""}streak \u{1F525}`;
     }
 
+    const templateComponents = buildReminderComponents(
+      name,
+      Boolean(goal),
+      progress,
+      setupDeadline,
+      completionDeadline,
+    );
+    const templatePayload = {
+      messaging_product: "whatsapp",
+      to: phone,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        components: templateComponents,
+      },
+    };
+
     if (dry) {
-      report.results.push({ id, name, phone, preview: msg.slice(0, 140) + "..." });
+      report.results.push({
+        id,
+        name,
+        phone,
+        preview: msg.slice(0, 140) + "...",
+        textPreview: msg,
+        textPayload: {
+          messaging_product: "whatsapp",
+          to: phone,
+          type: "text",
+          text: { preview_url: false, body: msg },
+        },
+        templatePayload,
+        template: templatePayload,
+        templateName,
+        components: templateComponents,
+      });
       continue;
     }
+
+    if (useTemplate) {
+      const tRes = await sendMetaTemplate(phone, templateName, templateComponents, languageCode);
+      if (tRes.ok) {
+        report.sent++;
+        report.results.push({
+          id,
+          name,
+          phone,
+          channel: "template",
+          template: templateName,
+          status: "sent",
+        });
+      } else {
+        report.blocked++;
+        report.results.push({
+          id,
+          name,
+          phone,
+          channel: "template",
+          template: templateName,
+          error: tRes.err,
+          code: tRes.code,
+        });
+      }
+      continue;
+    }
+
     const r = await sendMetaText(phone, msg);
-    if (r.ok) report.sent++;
-    else {
+    if (r.ok) {
+      report.sent++;
+    } else if (is24HourWindowError(r.code, r.err)) {
+      console.warn(
+        `[Reminders] 24-hour window closed for ${phone} (${name}): ${r.err}. Seamlessly falling back to template '${templateName}'...`,
+      );
+      const tRes = await sendMetaTemplate(phone, templateName, templateComponents, languageCode);
+      if (tRes.ok) {
+        report.sent++;
+        report.fallbackSent = (report.fallbackSent || 0) + 1;
+        report.results.push({
+          id,
+          name,
+          phone,
+          channel: "template_fallback",
+          template: templateName,
+          status: "sent",
+          note: "Fell back to template delivery due to 24h delivery window (Meta 131047)",
+        });
+      } else {
+        report.blocked++;
+        report.results.push({
+          id,
+          name,
+          phone,
+          error: `text failed (24h window: ${r.err}) and template fallback failed (${tRes.err})`,
+          code: tRes.code || r.code,
+        });
+      }
+    } else {
       report.blocked++;
-      report.results.push({ id, name, phone, error: r.err });
+      report.results.push({ id, name, phone, error: r.err, code: r.code });
     }
   }
   return report;
 }
 
-Deno.serve(async (req) => {
-  const url = new URL(req.url);
-  let dry = url.searchParams.get("mode") === "dry";
-  if (req.method === "POST") {
-    const body: any = await req.json().catch(() => ({}));
-    if (body?.dry === true) dry = true;
-  }
-  try {
-    const report = await runReminders(dry);
-    return new Response(JSON.stringify(report, null, 2), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ ok: false, error: e?.message ?? "unknown" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-});
+if (typeof Deno !== "undefined" && typeof Deno.serve === "function") {
+  Deno.serve(async (req: Request) => {
+    const url = new URL(req.url);
+    let dry = url.searchParams.get("mode") === "dry";
+    let forceTemplate =
+      url.searchParams.get("mode") === "template" ||
+      url.searchParams.get("delivery") === "template" ||
+      url.searchParams.get("forceTemplate") === "true" ||
+      url.searchParams.get("template") === "true";
+
+    if (req.method === "POST") {
+      const body: any = await req.json().catch(() => ({}));
+      if (body?.dry === true) dry = true;
+      if (
+        body?.delivery === "template" ||
+        body?.template === true ||
+        body?.forceTemplate === true
+      ) {
+        forceTemplate = true;
+      }
+    }
+    try {
+      const report = await runReminders(dry, forceTemplate);
+      return new Response(JSON.stringify(report, null, 2), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ ok: false, error: e?.message ?? "unknown" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  });
+}
+
+export {
+  sendMetaText,
+  sendMetaTemplate,
+  is24HourWindowError,
+  formatDeadline,
+  buildReminderComponents,
+  runReminders,
+};

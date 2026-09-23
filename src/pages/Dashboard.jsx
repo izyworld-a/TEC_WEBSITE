@@ -6,6 +6,9 @@ import { uploadToCloudinary } from '../cloudinary';
 import { FiCamera, FiAlertCircle, FiSave, FiDollarSign, FiShield, FiTrendingUp, FiDownload, FiStar, FiActivity, FiZap, FiAward, FiUser, FiCheckCircle } from 'react-icons/fi';
 import { onSnapshot } from 'firebase/firestore';
 import { getWeekId } from '../utils/weekUtils';
+import './dashboard.css';
+import ActiveGoalsKanban from '../components/ActiveGoalsKanban';
+import './peerGoals.css';
 
 
 const normalizeWhatsApp = (raw) => {
@@ -33,6 +36,14 @@ export default function Dashboard({ user, userData }) {
   const [profilePic, setProfilePic] = useState(userData?.profilePicUrl || '');
   const [uploading, setUploading] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
+
+  // Skills State
+  const [skills, setSkills] = useState(userData?.skills || []);
+  const [newSkillInput, setNewSkillInput] = useState('');
+  useEffect(() => {
+    if (userData?.skills) setSkills(userData.skills);
+  }, [userData?.skills]);
+  const [weeklyGoalsDoc, setWeeklyGoalsDoc] = useState(null);
 
   // Attendance State
   const [secretCode, setSecretCode] = useState('');
@@ -99,6 +110,7 @@ export default function Dashboard({ user, userData }) {
       const docSnap = await getDoc(goalDocRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
+        setWeeklyGoalsDoc(data);
         setWeeklyPoints(data.weeklyPoints || 0);
         if (data.tasks && data.tasks.length > 0) {
           setTasks(data.tasks);
@@ -112,6 +124,7 @@ export default function Dashboard({ user, userData }) {
           ]);
         }
       } else {
+        setWeeklyGoalsDoc(null);
         setGoalsSubmitted(false);
       }
 
@@ -119,6 +132,8 @@ export default function Dashboard({ user, userData }) {
       const unsubSettings = onSnapshot(doc(db, 'week_settings', weekId), (snap) => {
         if (snap.exists()) {
           setWeekSettings(snap.data());
+        } else {
+          setWeekSettings(null);
         }
       });
       return () => unsubSettings();
@@ -363,7 +378,7 @@ export default function Dashboard({ user, userData }) {
     }
     try {
       await updateDoc(doc(db, "users", user.uid), {
-        name, state: userState, country: userCountry, profession, bio,
+        name, state: userState, country: userCountry, profession, bio, skills,
         whatsappNumber: waNumber, phoneNumber: waNumber, whatsappOptIn: true,
         socials: {
           twitter: socials.twitter || '',
@@ -375,6 +390,30 @@ export default function Dashboard({ user, userData }) {
       setProfileMsg('Profile updated successfully!');
     } catch (err) {
       setProfileMsg('Error updating profile.');
+    }
+  };
+
+  const handleAddSkill = async (e) => {
+    if (e) e.preventDefault();
+    const trimmed = newSkillInput.trim();
+    if (!trimmed || skills.includes(trimmed)) return;
+    const updated = [...skills, trimmed];
+    setSkills(updated);
+    setNewSkillInput('');
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { skills: updated });
+    } catch (err) {
+      console.error('Error saving skill:', err);
+    }
+  };
+
+  const handleRemoveSkill = async (skillToRemove) => {
+    const updated = skills.filter((s) => s !== skillToRemove);
+    setSkills(updated);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { skills: updated });
+    } catch (err) {
+      console.error('Error removing skill:', err);
     }
   };
 
@@ -755,6 +794,17 @@ export default function Dashboard({ user, userData }) {
   
   const canSetGoals = !isPastSetup || setupGraceActive;
   const canSubmitGoals = !isPastCompletion || completionGraceActive;
+  const describedTasks = tasks.filter(task => task.description?.trim()).length;
+  const completedTasks = tasks.filter(task => task.status === 'Completed').length;
+  const plannedTasks = goalsSubmitted ? tasks.length : describedTasks;
+  const weeklyProgress = plannedTasks ? Math.round((completedTasks / plannedTasks) * 100) : 0;
+  const memberFirstName = (userData?.name || user?.displayName || 'Member').trim().split(/\s+/)[0];
+  const nextCheckpoint = goalsSubmitted ? completionDeadline : setupDeadline;
+  const nextCheckpointLabel = goalsSubmitted ? 'Proof & completion deadline' : 'Goal-setting deadline';
+  const nextCheckpointValue = nextCheckpoint
+    ? nextCheckpoint.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : 'Awaiting this week’s schedule';
+  const memberStatus = userData?.status || 'Active';
 
   const handleRequestGrace = async (type, paymentMethod) => {
     // type: 'setup' | 'completion'
@@ -852,7 +902,7 @@ export default function Dashboard({ user, userData }) {
   );
 
   return (
-    <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+    <div className="member-dashboard">
 
       {/* Grace Modal */}
       {showGraceModal && <GracePeriodModal type={showGraceModal} onClose={() => setShowGraceModal(null)} />}
@@ -977,101 +1027,77 @@ export default function Dashboard({ user, userData }) {
           </button>
         </div>
       )}
-      {/* Private Stats Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--secondary)' }}>
-            <FiDollarSign size={24} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              Wallet Balance <FiShield size={12} title="Private to you" />
-            </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: '700' }}>₦{userData?.walletBalance || 0}</div>
-          </div>
+      <section className="member-weekly-brief">
+        <div>
+          <span className="member-eyebrow">TEC WEEKLY / MEMBER SPACE</span>
+          <h1>Welcome back, {memberFirstName}.</h1>
+          <p>{goalsSubmitted ? 'Turn the commitments you made into proof this week.' : 'Start with a clear commitment for the week ahead.'}</p>
         </div>
-
-        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(16, 185, 129, 0.1)', background: 'rgba(16, 185, 129, 0.04)' }}>
-          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
-            <FiShield size={24} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>System Recovered Funds</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10b981' }}>₦{systemWallet.toLocaleString()}</div>
-          </div>
+        <div className="member-week-stamp">
+          <span>Active week</span>
+          <strong>{currentWeekId || 'Loading'}</strong>
+          <em>{memberStatus}</em>
         </div>
+      </section>
 
-        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)' }}>
-            <FiStar size={24} />
+      <section className="member-execution-board" aria-label="Weekly execution summary">
+        <div className="member-commitment">
+          <span className="member-eyebrow">YOUR COMMITMENT</span>
+          <h2>{goalsSubmitted ? `${completedTasks} of ${plannedTasks} goals marked complete` : 'Set the work that matters this week.'}</h2>
+          <p>{goalsSubmitted ? 'Update each goal with progress and proof before the review window closes.' : 'Choose a small, concrete set of goals. Your commitments create the week’s scoreboard.'}</p>
+          <div className="member-progress-track" aria-label={`${weeklyProgress}% of goals marked complete`}>
+            <span style={{ width: `${weeklyProgress}%` }} />
           </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Community Status</div>
-            <div className="stars" style={{ gap: '2px', display: 'flex' }}>
-              {[...Array(5)].map((_, i) => (
-                <FiStar 
-                  key={i} 
-                  size={16} 
-                  className={i < calculateStars(userData?.totalPoints || 0) ? 'star-filled' : 'star-empty'} 
-                  fill={i < calculateStars(userData?.totalPoints || 0) ? 'var(--star-color)' : 'none'}
-                />
-              ))}
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              {calculateStars(userData?.totalPoints || 0)} Star Member
-            </div>
+          <div className="member-progress-caption">
+            <span>{weeklyProgress}% marked complete</span>
+            <span>{weeklyPoints || 0} points this week</span>
           </div>
+          <button onClick={() => setActiveTab('goals')} className="member-primary-action">
+            {goalsSubmitted ? 'Update goals' : 'Set weekly goals'} <span aria-hidden="true">→</span>
+          </button>
         </div>
+        <aside className="member-checkpoint">
+          <span className="member-checkpoint-label">NEXT CHECKPOINT</span>
+          <strong>{nextCheckpointLabel}</strong>
+          <time>{nextCheckpointValue}</time>
+          <span className={isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'member-checkpoint-state overdue' : 'member-checkpoint-state'}>
+            {isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'Deadline passed' : 'Keep the week moving'}
+          </span>
+        </aside>
+      </section>
 
-        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)' }}>
-            <FiActivity size={24} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Weekly Points</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: '700' }}>{weeklyPoints || 0} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>pts</span></div>
-          </div>
+      <section className="member-metrics" aria-label="Your member metrics">
+        <div className="member-metric">
+          <span>Wallet</span>
+          <strong>₦{(userData?.walletBalance || 0).toLocaleString()}</strong>
+          <small>Private balance</small>
         </div>
-
-        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(236, 72, 153, 0.1)', background: 'rgba(236, 72, 153, 0.04)' }}>
-          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899' }}>
-            <FiTrendingUp size={24} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Achievement Stars</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--star-color)' }}>★</span> {userData?.achievementStars || 0}
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-              {userData?.consecutiveGoodWeeks || 0}/4 weeks to next
-            </div>
-          </div>
+        <div className="member-metric">
+          <span>Lifetime points</span>
+          <strong>{(userData?.totalPoints || 0).toLocaleString()}</strong>
+          <small>Earned through execution</small>
         </div>
-
-        {/* Total Points Card */}
-        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(16, 185, 129, 0.1)', background: 'rgba(16, 185, 129, 0.04)' }}>
-          <div style={{ padding: '0.75rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
-            <FiAward size={24} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total Earned Points</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10b981' }}>{userData?.totalPoints || 0} <span style={{ fontSize: '0.8rem', fontWeight: '400', color: 'var(--text-secondary)' }}>pts</span></div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Lifetime Earnings</div>
-          </div>
+        <div className="member-metric">
+          <span>Daily rhythm</span>
+          <strong>{streakData.currentStreak || 0} <small>days</small></strong>
+          <small>{streakData.checkedInToday ? 'Checked in today' : 'Check in to extend it'}</small>
         </div>
-      </div>
+        <div className="member-metric">
+          <span>Recognition</span>
+          <strong>{userData?.achievementStars || 0} <small>stars</small></strong>
+          <small>{userData?.consecutiveGoodWeeks || 0}/4 strong weeks</small>
+        </div>
+      </section>
 
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
-        <button onClick={() => setActiveTab('goals')} className={`btn ${activeTab === 'goals' ? 'btn-primary' : 'btn-secondary'}`}>Weekly Goals</button>
-        <button onClick={() => setActiveTab('vision')} className={`btn ${activeTab === 'vision' ? 'btn-primary' : 'btn-secondary'}`}>🎯 Monthly Vision</button>
-        <button onClick={() => setActiveTab('streak')} className={`btn ${activeTab === 'streak' ? 'btn-primary' : 'btn-secondary'}`}><FiZap /> Daily Streak</button>
-        <button onClick={() => setActiveTab('attendance')} className={`btn ${activeTab === 'attendance' ? 'btn-primary' : 'btn-secondary'}`}>Attendance Check-In</button>
-        <button onClick={() => setActiveTab('profile')} className={`btn ${activeTab === 'profile' ? 'btn-primary' : 'btn-secondary'}`}>Profile Settings</button>
-        <button onClick={() => setActiveTab('partner')} className={`btn ${activeTab === 'partner' ? 'btn-primary' : 'btn-secondary'}`}>🤝 Partner</button>
-        <Link to="/livefeed" className="btn btn-secondary" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary)', color: 'white', border: 'none' }}>
-          <FiActivity /> Live Feed
-        </Link>
-      </div>
+      <nav className="member-section-nav" aria-label="Member dashboard sections">
+        <button onClick={() => setActiveTab('goals')} className={activeTab === 'goals' ? 'active' : ''}>Weekly goals</button>
+        <button onClick={() => setActiveTab('vision')} className={activeTab === 'vision' ? 'active' : ''}>Monthly vision</button>
+        <button onClick={() => setActiveTab('streak')} className={activeTab === 'streak' ? 'active' : ''}>Daily rhythm</button>
+        <button onClick={() => setActiveTab('attendance')} className={activeTab === 'attendance' ? 'active' : ''}>Attendance</button>
+        <button onClick={() => setActiveTab('partner')} className={activeTab === 'partner' ? 'active' : ''}>Partner</button>
+        <button onClick={() => setActiveTab('profile')} className={activeTab === 'profile' ? 'active' : ''}>Profile</button>
+        <Link to="/livefeed" className="member-live-link">Community feed <span aria-hidden="true">→</span></Link>
+      </nav>
 
       {/* ── Daily Streak Tab ── */}
       {activeTab === 'streak' && (() => {
@@ -1418,6 +1444,49 @@ export default function Dashboard({ user, userData }) {
               </div>
             </div>
 
+            <h3 style={{ margin: '1.5rem 0 0.5rem', fontWeight: '700', fontSize: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+              Specializations & Skills
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+              Peers use your skills to suggest relevant, high-impact goals for you each week.
+            </p>
+
+            <div className="skills-tags" style={{ marginBottom: '0.75rem' }}>
+              {skills.map((skill, idx) => (
+                <span key={idx} className="skill-pill-editable">
+                  {skill}
+                  <button type="button" onClick={() => handleRemoveSkill(skill)} className="skill-remove-btn" title="Remove skill">
+                    ×
+                  </button>
+                </span>
+              ))}
+              {skills.length === 0 && (
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  No skills listed yet. Add your core skills below!
+                </span>
+              )}
+            </div>
+
+            <div className="skills-input-row" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.75rem' }}>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="e.g. Video Editing, UI/UX, Python, Copywriting"
+                value={newSkillInput}
+                onChange={(e) => setNewSkillInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddSkill(e);
+                  }
+                }}
+                style={{ flex: 1 }}
+              />
+              <button type="button" onClick={handleAddSkill} className="btn btn-secondary">
+                Add Skill
+              </button>
+            </div>
+
             <button type="submit" className="btn btn-primary"><FiSave /> Save Profile</button>
           </form>
 
@@ -1454,6 +1523,35 @@ export default function Dashboard({ user, userData }) {
       )}
 
       {activeTab === 'goals' && (
+        (Boolean(weekSettings?.peerGoalsEnabled)) ? (
+          goalsSubmitted && weeklyGoalsDoc?.tasks?.length > 0 ? (
+            <ActiveGoalsKanban
+              user={user}
+              userData={userData}
+              currentWeekId={currentWeekId}
+              weeklyGoalsDoc={weeklyGoalsDoc}
+              weekSettings={weekSettings}
+              onGoalsUpdated={(newTasks) => setTasks(newTasks)}
+            />
+          ) : (
+            <div className="glass-panel" style={{ padding: '3rem 2rem', textAlign: 'center', borderRadius: '16px' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤝</div>
+              <h2 style={{ marginBottom: '0.5rem' }}>Peer Goal Suggestion Cycle Active</h2>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '580px', margin: '0 auto 1.5rem', lineHeight: '1.6' }}>
+                For this cycle (<strong>{currentWeekId}</strong>), goals are collaboratively suggested by peers. 
+                First, suggest 1 goal for every member in your space on the <strong>Members Page</strong>. Then, open your <strong>Goals Inbox</strong> to choose at least 2 goals to activate your Kanban board!
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Link to="/members" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
+                  1. View Members &amp; Assign Goals
+                </Link>
+                <Link to="/goals-inbox" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem' }}>
+                  2. Open Goals Inbox &amp; Commit
+                </Link>
+              </div>
+            </div>
+          )
+        ) : (
         <div className="glass-panel printable" style={{ padding: '2rem', opacity: isLockedOut ? 0.5 : 1, pointerEvents: isLockedOut ? 'none' : 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
             <div>
@@ -1576,6 +1674,7 @@ export default function Dashboard({ user, userData }) {
           </div>
 
         </div>
+        )
       )}
 
       {activeTab === 'attendance' && (

@@ -321,10 +321,13 @@ ul {
   display: none;
 }
 
-@media (max-width: 850px) {
+@media (max-width: 980px) {
+  .desktop-only {
+    display: none !important;
+  }
   
   .mobile-menu-btn {
-    display: flex;
+    display: flex !important;
     align-items: center;
     justify-content: center;
   }
@@ -337,20 +340,23 @@ ul {
     left: 0;
     right: 0;
     margin: 0.5rem 1rem;
-    padding: 1.5rem;
-    gap: 1.25rem;
+    padding: 1.25rem;
+    gap: 0.75rem;
     font-weight: 600;
     background-color: var(--bg-card);
-    opacity: 0.95;
+    opacity: 0.98;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+    z-index: 1002;
   }
 
   .mobile-nav-dropdown a {
     color: var(--text-main);
     text-decoration: none;
-    padding: 0.5rem;
+    padding: 0.5rem 0.75rem;
     border-radius: 8px;
     transition: background-color 0.2s;
   }
@@ -1461,6 +1467,8 @@ ul {
   background: color-mix(in srgb, var(--bg-card) 94%, transparent);
   border-radius: 0;
   box-shadow: none;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .tec-nav-meta {
@@ -1468,6 +1476,22 @@ ul {
   gap: 0.55rem;
   margin-left: 1rem;
   margin-right: auto;
+}
+
+@media (max-width: 1200px) {
+  .tec-nav-meta {
+    display: none !important;
+  }
+}
+
+.tec-nav-btn {
+  padding: 0.38rem 0.68rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  white-space: nowrap !important;
+  line-height: 1.2 !important;
+  gap: 0.35rem !important;
 }
 
 .tec-live-page {

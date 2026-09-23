@@ -66,7 +66,11 @@ export default function Navbar({ user, userData }) {
     const weekId = getWeekId(new Date());
 
     const unsubscribeSettings = onSnapshot(doc(db, 'week_settings', weekId), (snap) => {
-      if (snap.exists()) setWeekSettings(snap.data());
+      if (snap.exists()) {
+        setWeekSettings(snap.data());
+      } else {
+        setWeekSettings(null);
+      }
     });
 
     // Listen to active announcements
@@ -136,21 +140,24 @@ export default function Navbar({ user, userData }) {
       <nav className="navbar tec-navbar" style={{
         margin: '0',
         borderRadius: '0',
-        padding: '0.75rem 1rem',
+        padding: '0.65rem 1.25rem',
+        boxSizing: 'border-box',
+        maxWidth: '100%',
+        gap: '0.75rem',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         position: 'relative'
       }}>
         {/* Brand Logo & Name */}
-        <div style={{ flexShrink: 0 }}>
+        <div style={{ flexShrink: 0, minWidth: 'max-content' }}>
           <Link
             to={user && !isHome ? "/dashboard" : "/"}
             className="nav-brand"
-            style={{ fontSize: '1.5rem', fontWeight: '800', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+            style={{ fontSize: '1.35rem', fontWeight: '800', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem', whiteSpace: 'nowrap' }}
           >
-            <img src="/icons/icon-57x57.png" alt="TEC Logo" style={{ width: '32px', height: '32px', borderRadius: '8px', objectFit: 'contain' }} />
-            TEC Weekly
+            <img src="/icons/icon-57x57.png" alt="TEC Logo" style={{ width: '28px', height: '28px', borderRadius: '7px', objectFit: 'contain' }} />
+            <span>TEC Weekly</span>
           </Link>
         </div>
 
@@ -186,7 +193,7 @@ export default function Navbar({ user, userData }) {
           </div>
         ) : (
           /* ── DASHBOARD & APP NAVIGATION (isHome === false) ── */
-          <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexShrink: 0 }}>
+          <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 1, minWidth: 0, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
 
             {/* Notification Bell (Inside Dashboard / App only) */}
             {user && (
@@ -280,50 +287,54 @@ export default function Navbar({ user, userData }) {
 
             {/* Authenticated Links & Sign Out Button inside Dashboard */}
             {user ? (
-              <div className="desktop-only" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div className="desktop-only tec-nav-actions" style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                 {userData?.isAdmin && (
-                  <Link to="/admin" className="btn btn-secondary">Admin</Link>
+                  <Link to="/admin" className="btn btn-secondary tec-nav-btn">Admin</Link>
                 )}
                 {(userData?.isModerator || userData?.isAdmin) && (
-                  <Link to="/moderator" className="btn btn-secondary" style={{ background: 'rgba(168,85,247,0.15)', borderColor: '#a855f7', color: '#a855f7' }}>Moderator</Link>
+                  <Link to="/moderator" className="btn btn-secondary tec-nav-btn" style={{ background: 'rgba(168,85,247,0.15)', borderColor: '#a855f7', color: '#a855f7' }}>Moderator</Link>
                 )}
-                {location.pathname !== '/dashboard' && userData?.status !== 'Pending' && (
-                  <Link to="/dashboard" className="btn btn-secondary">Dashboard</Link>
+                {userData?.status !== 'Pending' && (
+                  <Link to="/dashboard" className="btn btn-secondary tec-nav-btn">Dashboard</Link>
                 )}
-                {location.pathname !== '/livefeed' && (
-                  <Link to="/livefeed" className="btn btn-secondary">Live Feed</Link>
+                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && (
+                  <Link to="/members" className="btn btn-secondary tec-nav-btn">Members</Link>
                 )}
+                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && (
+                  <Link to="/goals-inbox" className="btn btn-secondary tec-nav-btn">Goals Inbox</Link>
+                )}
+                <Link to="/livefeed" className="btn btn-secondary tec-nav-btn">Live Feed</Link>
 
                 {/* Profile-integrated Logout / Sign Out Button */}
                 <button
                   onClick={handleLogout}
-                  className="btn btn-primary"
+                  className="btn btn-primary tec-nav-btn"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '12px'
+                    gap: '0.4rem',
+                    padding: '0.38rem 0.75rem',
+                    borderRadius: '8px'
                   }}
                   title="Sign Out"
                 >
                   {userData?.profilePicUrl ? (
-                    <img src={userData.profilePicUrl} alt="User" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+                    <img src={userData.profilePicUrl} alt="User" style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
                   ) : (
-                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem' }}>
                       {userData?.name?.charAt(0).toUpperCase() || 'U'}
                     </div>
                   )}
                   <span>Sign Out</span>
-                  <FiLogOut size={16} />
+                  <FiLogOut size={14} />
                 </button>
               </div>
             ) : (
               /* Non-authenticated Auth Route Buttons (e.g. /login, /register) */
-              <div className="desktop-only" style={{ display: 'flex', gap: '0.75rem' }}>
-                <Link to="/" className="btn btn-secondary">Home</Link>
-                {location.pathname !== '/login' && <Link to="/login" className="btn btn-secondary">Login</Link>}
-                {location.pathname !== '/register' && <Link to="/register" className="btn btn-primary">Sign Up</Link>}
+              <div className="desktop-only" style={{ display: 'flex', gap: '0.35rem' }}>
+                <Link to="/" className="btn btn-secondary tec-nav-btn">Home</Link>
+                {location.pathname !== '/login' && <Link to="/login" className="btn btn-secondary tec-nav-btn">Login</Link>}
+                {location.pathname !== '/register' && <Link to="/register" className="btn btn-primary tec-nav-btn">Sign Up</Link>}
               </div>
             )}
 
@@ -347,6 +358,8 @@ export default function Navbar({ user, userData }) {
             ) : user ? (
               <>
                 {userData?.status !== 'Pending' && <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Dashboard</Link>}
+                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/members" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Members</Link>}
+                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/goals-inbox" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Goals Inbox</Link>}
                 <Link to="/livefeed" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Live Feed</Link>
                 {userData?.isAdmin && <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Admin</Link>}
                 {(userData?.isModerator || userData?.isAdmin) && <Link to="/moderator" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: '#a855f7', fontWeight: 'bold' }}>Moderator</Link>}

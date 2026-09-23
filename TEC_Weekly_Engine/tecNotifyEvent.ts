@@ -119,7 +119,7 @@ async function fsRunQuery(token: string, structuredQuery: any): Promise<any[]> {
     .map((r: any) => ({ id: r.document.name.split("/").pop(), fields: r.document.fields }));
 }
 
-async function sendMetaText(to: string, body: string): Promise<{ ok: boolean; err?: string }> {
+async function sendMetaText(to: string, body: string): Promise<{ ok: boolean; err?: string; code?: number }> {
   try {
     const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`, {
       method: "POST",
@@ -128,10 +128,84 @@ async function sendMetaText(to: string, body: string): Promise<{ ok: boolean; er
     });
     const data: any = await res.json();
     if (data?.messages?.[0]?.id) return { ok: true };
-    return { ok: false, err: JSON.stringify(data).slice(0, 120) };
+    const code: number | undefined = data?.error?.code;
+    return {
+      ok: false,
+      code,
+      err: code
+        ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
+        : JSON.stringify(data).slice(0, 120),
+    };
   } catch (e: any) {
     return { ok: false, err: e?.message ?? "network error" };
   }
+}
+
+async function sendMetaTemplate(
+  to: string,
+  templateName: string,
+  components: any[] = [],
+  languageCode = "en_US",
+): Promise<{ ok: boolean; err?: string; code?: number }> {
+  try {
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${Deno.env.get("META_ACCESS_TOKEN") ?? ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          components,
+        },
+      }),
+    });
+    const data: any = await res.json();
+    if (data?.messages?.[0]?.id) return { ok: true };
+    const code: number | undefined = data?.error?.code;
+    return {
+      ok: false,
+      code,
+      err: code
+        ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
+        : JSON.stringify(data).slice(0, 120),
+    };
+  } catch (e: any) {
+    return { ok: false, err: e?.message ?? "network error" };
+  }
+}
+
+async function sendOutboundNotification({
+  phone,
+  textMessage,
+  templateName,
+  templateComponents,
+  languageCode = "en_US",
+}: {
+  phone: string;
+  textMessage: string;
+  templateName?: string;
+  templateComponents?: any[];
+  languageCode?: string;
+}): Promise<{ ok: boolean; err?: string; channel: "template" | "text" }> {
+  // Try template first if templateName provided (bypasses 24h window constraint)
+  if (templateName) {
+    const tRes = await sendMetaTemplate(phone, templateName, templateComponents || [], languageCode);
+    if (tRes.ok) {
+      return { ok: true, channel: "template" };
+    }
+    // If template doesn't exist on Meta yet (132001), log and fall back to freeform text
+    console.warn(`[tecNotifyEvent] Template '${templateName}' send failed (${tRes.err}), falling back to text.`);
+  }
+
+  // Fallback to text message
+  const textRes = await sendMetaText(phone, textMessage);
+  return { ok: textRes.ok, err: textRes.err, channel: "text" };
 }
 
 async function handleModeratorAssigned(token: string, userId: string, weekId: string) {
@@ -141,8 +215,25 @@ async function handleModeratorAssigned(token: string, userId: string, weekId: st
   if (!phone) return { ok: false, error: "no whatsapp number on file" };
   const name = (fields.name?.stringValue || "there").trim().split(/\s+/)[0];
   const msg = `\u{1F396}\uFE0F ${name}, you've been assigned *moderator* for Week ${weekId} on TEC Weekly!\n\nYou can now review and approve members' task proofs on the site. Reply here anytime if you need the current roster.`;
-  const r = await sendMetaText(phone, msg);
-  return { ok: r.ok, error: r.err };
+  
+  const templateName = Deno.env.get("META_MODERATOR_TEMPLATE") || "moderator_assigned";
+  const templateComponents = [
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: name },
+        { type: "text", text: `Week ${weekId}` },
+      ],
+    },
+  ];
+
+  const r = await sendOutboundNotification({
+    phone,
+    textMessage: msg,
+    templateName,
+    templateComponents,
+  });
+  return { ok: r.ok, error: r.err, channel: r.channel };
 }
 
 async function handleMeetingReminder(token: string, when: string, customMessage?: string) {
@@ -151,15 +242,39 @@ async function handleMeetingReminder(token: string, when: string, customMessage?
     where: { fieldFilter: { field: { fieldPath: "whatsappOptIn" }, op: "EQUAL", value: { booleanValue: true } } },
     limit: 500,
   });
-  const msg = customMessage || `\u{1F5D3}\uFE0F Reminder: TEC Weekly meeting is today at ${when}. Be there and bring your updates!`;
+  const templateName = Deno.env.get("META_MEETING_TEMPLATE") || "meeting_reminder";
   let sent = 0, blocked = 0;
+  const deliveryChannels: { [key: string]: number } = { template: 0, text: 0 };
+
   for (const { fields } of rows) {
     const phone = (fields.whatsappNumber?.stringValue || "").replace(/[^0-9]/g, "");
     if (!phone) continue;
-    const r = await sendMetaText(phone, msg);
-    if (r.ok) sent++; else blocked++;
+    const name = (fields.name?.stringValue || "there").trim().split(/\s+/)[0];
+    const msg = customMessage || `\u{1F5D3}\uFE0F Reminder: TEC Weekly meeting is today at ${when}. Be there and bring your updates!`;
+    const templateComponents = [
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: name },
+          { type: "text", text: when },
+        ],
+      },
+    ];
+
+    const r = await sendOutboundNotification({
+      phone,
+      textMessage: msg,
+      templateName,
+      templateComponents,
+    });
+    if (r.ok) {
+      sent++;
+      deliveryChannels[r.channel] = (deliveryChannels[r.channel] || 0) + 1;
+    } else {
+      blocked++;
+    }
   }
-  return { ok: true, sent, blocked, total: rows.length };
+  return { ok: true, sent, blocked, total: rows.length, channels: deliveryChannels };
 }
 
 async function handleDeadlineUpdate(token: string, weekId: string, setupDeadline?: string, completionDeadline?: string): Promise<any> {
@@ -181,14 +296,40 @@ async function handleDeadlineUpdate(token: string, weekId: string, setupDeadline
   if (c) parts.push(`\u{1F4DD} Complete all tasks by *${c}*`);
   if (!parts.length) return { ok: false, error: "no deadlines provided" };
   const msg = `\u{23F0}\uFE0F *Deadline Update \u2014 Week ${weekId || "this week"}*\n\n${parts.join("\n")}\n\nCheck the TEC Weekly site for details.`;
+  const templateName = Deno.env.get("META_DEADLINE_TEMPLATE") || "deadline_alert";
+
   let sent = 0, blocked = 0;
+  const deliveryChannels: { [key: string]: number } = { template: 0, text: 0 };
+
   for (const { fields } of rows) {
     const phone = (fields.whatsappNumber?.stringValue || "").replace(/[^0-9]/g, "");
     if (!phone) continue;
-    const r = await sendMetaText(phone, msg);
-    if (r.ok) sent++; else blocked++;
+    const name = (fields.name?.stringValue || "there").trim().split(/\s+/)[0];
+    const templateComponents = [
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: name },
+          { type: "text", text: `Week ${weekId || "Current"}` },
+          { type: "text", text: s || c || "Sunday 11:59 PM" },
+        ],
+      },
+    ];
+
+    const r = await sendOutboundNotification({
+      phone,
+      textMessage: msg,
+      templateName,
+      templateComponents,
+    });
+    if (r.ok) {
+      sent++;
+      deliveryChannels[r.channel] = (deliveryChannels[r.channel] || 0) + 1;
+    } else {
+      blocked++;
+    }
   }
-  return { ok: true, sent, blocked, total: rows.length };
+  return { ok: true, sent, blocked, total: rows.length, channels: deliveryChannels };
 }
 
 async function handleAnnouncement(token: string, message: string, category?: string): Promise<any> {
@@ -199,14 +340,40 @@ async function handleAnnouncement(token: string, message: string, category?: str
   });
   const label = category && category !== "General" ? ` (${category})` : "";
   const msg = `\u{1F4E3} *TEC Weekly Announcement${label}*\n\n${message}`;
+  const templateName = Deno.env.get("META_ANNOUNCEMENT_TEMPLATE") || "tec_announcement";
+
   let sent = 0, blocked = 0;
+  const deliveryChannels: { [key: string]: number } = { template: 0, text: 0 };
+
   for (const { fields } of rows) {
     const phone = (fields.whatsappNumber?.stringValue || "").replace(/[^0-9]/g, "");
     if (!phone) continue;
-    const r = await sendMetaText(phone, msg);
-    if (r.ok) sent++; else blocked++;
+    const name = (fields.name?.stringValue || "there").trim().split(/\s+/)[0];
+    const templateComponents = [
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: name },
+          { type: "text", text: category || "Announcement" },
+          { type: "text", text: message.slice(0, 500) },
+        ],
+      },
+    ];
+
+    const r = await sendOutboundNotification({
+      phone,
+      textMessage: msg,
+      templateName,
+      templateComponents,
+    });
+    if (r.ok) {
+      sent++;
+      deliveryChannels[r.channel] = (deliveryChannels[r.channel] || 0) + 1;
+    } else {
+      blocked++;
+    }
   }
-  return { ok: true, sent, blocked, total: rows.length };
+  return { ok: true, sent, blocked, total: rows.length, channels: deliveryChannels };
 }
 
 Deno.serve(async (req: Request) => {

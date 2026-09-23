@@ -159,5 +159,11 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAdmin() || isModerator();
     }
+
+    match /suggested_goals/{goalId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin() || isModerator();
+    }
   }
 }
