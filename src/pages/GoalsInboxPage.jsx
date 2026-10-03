@@ -16,16 +16,17 @@ export default function GoalsInboxPage({ user, userData }) {
   const [accepting, setAccepting] = useState(false);
   const [currentWeekId] = useState(() => getWeekId(new Date()));
   const [weekSettings, setWeekSettings] = useState(null);
+  const [systemSettings, setSystemSettings] = useState(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   
   // Mandatory Suggestion Lock State
   const [allPeersCount, setAllPeersCount] = useState(0);
   const [mySuggestionsCount, setMySuggestionsCount] = useState(0);
 
-  // 0. Listen to current week settings to check peerGoalsEnabled
+  // 0. Listen to current week settings and system settings to check peerGoalsEnabled
   useEffect(() => {
     if (!currentWeekId) return;
-    const unsub = onSnapshot(doc(db, 'week_settings', currentWeekId), (snap) => {
+    const unsubWeek = onSnapshot(doc(db, 'week_settings', currentWeekId), (snap) => {
       if (snap.exists()) {
         setWeekSettings(snap.data());
       } else {
@@ -36,7 +37,21 @@ export default function GoalsInboxPage({ user, userData }) {
       console.error('Error fetching week settings:', err);
       setSettingsLoading(false);
     });
-    return () => unsub();
+
+    const unsubSystem = onSnapshot(doc(db, 'system_data', 'settings'), (snap) => {
+      if (snap.exists()) {
+        setSystemSettings(snap.data());
+      } else {
+        setSystemSettings(null);
+      }
+    }, (err) => {
+      console.error('Error fetching system settings:', err);
+    });
+
+    return () => {
+      unsubWeek();
+      unsubSystem();
+    };
   }, [currentWeekId]);
 
   // Review Modal State (for tab 'sent')
@@ -64,27 +79,31 @@ export default function GoalsInboxPage({ user, userData }) {
 
   // 2. Fetch how many suggestions user has made this week
   useEffect(() => {
-    if (!user || !currentWeekId) return;
+    if (!user) return;
     const qMySuggestions = query(
       collection(db, 'suggested_goals'),
-      where('fromUserId', '==', user.uid),
-      where('weekId', '==', currentWeekId)
+      where('fromUserId', '==', user.uid)
     );
     const unsub = onSnapshot(qMySuggestions, (snap) => {
-      setMySuggestionsCount(snap.size);
+      const allDocs = snap.docs.map(d => d.data());
+      const currentWeekDocs = allDocs.filter(d => d.weekId === currentWeekId);
+      if (currentWeekDocs.length > 0) {
+        setMySuggestionsCount(currentWeekDocs.length);
+      } else {
+        setMySuggestionsCount(allDocs.length);
+      }
     }, (err) => {
       console.error('Error fetching my suggestions count:', err);
     });
     return () => unsub();
   }, [user, currentWeekId]);
 
-  // 3. Fetch goals suggested TO me for the current week
+  // 3. Fetch goals suggested TO me
   useEffect(() => {
-    if (!user || !currentWeekId) return;
+    if (!user) return;
     const qReceived = query(
       collection(db, 'suggested_goals'),
-      where('toUserId', '==', user.uid),
-      where('weekId', '==', currentWeekId)
+      where('toUserId', '==', user.uid)
     );
 
     const unsub = onSnapshot(qReceived, (snap) => {
@@ -92,7 +111,12 @@ export default function GoalsInboxPage({ user, userData }) {
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() });
       });
-      setReceivedGoals(list);
+      const currentList = list.filter(g => g.weekId === currentWeekId);
+      if (currentList.length > 0) {
+        setReceivedGoals(currentList);
+      } else {
+        setReceivedGoals(list);
+      }
       setLoading(false);
     }, (err) => {
       console.error('Error fetching received goals:', err);
@@ -102,13 +126,12 @@ export default function GoalsInboxPage({ user, userData }) {
     return () => unsub();
   }, [user, currentWeekId]);
 
-  // 4. Fetch goals I suggested to others for current week
+  // 4. Fetch goals I suggested to others
   useEffect(() => {
-    if (!user || !currentWeekId) return;
+    if (!user) return;
     const qSent = query(
       collection(db, 'suggested_goals'),
-      where('fromUserId', '==', user.uid),
-      where('weekId', '==', currentWeekId)
+      where('fromUserId', '==', user.uid)
     );
 
     const unsub = onSnapshot(qSent, (snap) => {
@@ -116,7 +139,12 @@ export default function GoalsInboxPage({ user, userData }) {
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() });
       });
-      setSentGoals(list);
+      const currentSent = list.filter(g => g.weekId === currentWeekId);
+      if (currentSent.length > 0) {
+        setSentGoals(currentSent);
+      } else {
+        setSentGoals(list);
+      }
     }, (err) => {
       console.error('Error fetching sent goals:', err);
     });
@@ -181,13 +209,15 @@ export default function GoalsInboxPage({ user, userData }) {
         weeklyGoalDocRef,
         {
           userId: user.uid,
-          userName: userData?.name || 'Member',
+          userName: userData?.name || user.displayName || user.email || 'Member',
           userEmail: user.email,
+          profilePicUrl: userData?.profilePicUrl || user.photoURL || '',
           weekId: currentWeekId,
           isPeerGoalWeek: true,
           tasks,
           weeklyPoints: 0,
           status: 'Active',
+          submittedAt: serverTimestamp(),
           goalsSubmittedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         },
@@ -227,8 +257,12 @@ export default function GoalsInboxPage({ user, userData }) {
     setSubmittingReview(true);
     try {
       const targetUserId = reviewingGoal.toUserId;
-      const targetWeeklyGoalRef = doc(db, 'weekly_goals', `${targetUserId}_${currentWeekId}`);
-      const snap = await getDoc(targetWeeklyGoalRef);
+      let targetWeeklyGoalRef = doc(db, 'weekly_goals', `${targetUserId}_${reviewingGoal.weekId || currentWeekId}`);
+      let snap = await getDoc(targetWeeklyGoalRef);
+      if (!snap.exists()) {
+        targetWeeklyGoalRef = doc(db, 'weekly_goals', `${targetUserId}_${currentWeekId}`);
+        snap = await getDoc(targetWeeklyGoalRef);
+      }
 
       if (snap.exists()) {
         const data = snap.data();
@@ -285,7 +319,9 @@ export default function GoalsInboxPage({ user, userData }) {
     }
   };
 
-  if (!settingsLoading && !weekSettings?.peerGoalsEnabled) {
+  const isPeerGoalsActive = Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled ?? false);
+
+  if (!settingsLoading && !isPeerGoalsActive) {
     return (
       <div className="peer-goals-container" style={{ paddingTop: '3rem' }}>
         <div className="glass-panel" style={{ padding: '3.5rem 2rem', textAlign: 'center', borderRadius: '16px', maxWidth: '640px', margin: '2rem auto' }}>

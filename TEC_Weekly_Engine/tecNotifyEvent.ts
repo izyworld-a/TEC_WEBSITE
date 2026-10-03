@@ -147,37 +147,60 @@ async function sendMetaTemplate(
   components: any[] = [],
   languageCode = "en_US",
 ): Promise<{ ok: boolean; err?: string; code?: number }> {
-  try {
-    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${Deno.env.get("META_ACCESS_TOKEN") ?? ""}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          components,
-        },
-      }),
-    });
-    const data: any = await res.json();
-    if (data?.messages?.[0]?.id) return { ok: true };
-    const code: number | undefined = data?.error?.code;
-    return {
-      ok: false,
-      code,
-      err: code
-        ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
-        : JSON.stringify(data).slice(0, 120),
-    };
-  } catch (e: any) {
-    return { ok: false, err: e?.message ?? "network error" };
+  const token = Deno.env.get("META_ACCESS_TOKEN") ?? "";
+  const nameCandidates = [templateName];
+  if (templateName.endsWith("_")) {
+    nameCandidates.push(templateName.slice(0, -1));
+  } else {
+    nameCandidates.push(`${templateName}_`);
   }
+  if (templateName === "moderator_assigned") nameCandidates.push("moderator_assigne");
+  const langCandidates = languageCode === "en_US" ? ["en_US", "en"] : [languageCode, "en", "en_US"];
+  const uniqueNames = Array.from(new Set(nameCandidates));
+  const uniqueLangs = Array.from(new Set(langCandidates));
+
+  let lastResult: { ok: boolean; err?: string; code?: number } = { ok: false, err: "No attempts made" };
+
+  for (const name of uniqueNames) {
+    for (const lang of uniqueLangs) {
+      try {
+        const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to,
+            type: "template",
+            template: {
+              name,
+              language: { code: lang },
+              components,
+            },
+          }),
+        });
+        const data: any = await res.json();
+        if (data?.messages?.[0]?.id) return { ok: true };
+        const code: number | undefined = data?.error?.code;
+        lastResult = {
+          ok: false,
+          code,
+          err: code
+            ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
+            : JSON.stringify(data).slice(0, 120),
+        };
+        // If error is not related to template name or language mismatch, return result immediately
+        if (code !== 132001 && code !== 132000 && code !== 100) {
+          return lastResult;
+        }
+      } catch (e: any) {
+        lastResult = { ok: false, err: e?.message ?? "network error" };
+      }
+    }
+  }
+  return lastResult;
 }
 
 async function sendOutboundNotification({

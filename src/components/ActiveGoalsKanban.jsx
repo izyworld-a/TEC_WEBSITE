@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { uploadToCloudinary } from '../cloudinary';
 import {
   FiClock,
@@ -18,7 +18,6 @@ import '../pages/peerGoals.css';
 
 export default function ActiveGoalsKanban({ user, userData, currentWeekId, weeklyGoalsDoc, weekSettings, onGoalsUpdated }) {
   const [tasks, setTasks] = useState(weeklyGoalsDoc?.tasks || []);
-  const [timeLeft, setTimeLeft] = useState({ days: 7, hours: 0, minutes: 0, seconds: 0 });
   const [proofModalOpen, setProofModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
 
@@ -37,49 +36,18 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
     }
   }, [weeklyGoalsDoc?.tasks]);
 
-  // 7-Day Countdown Timer
-  useEffect(() => {
-    const calculateCountdown = () => {
-      let targetTime;
-      if (weekSettings?.completionDeadline) {
-        targetTime = new Date(weekSettings.completionDeadline).getTime();
-      } else if (weeklyGoalsDoc?.goalsSubmittedAt) {
-        const submittedDate = weeklyGoalsDoc.goalsSubmittedAt?.toDate
-          ? weeklyGoalsDoc.goalsSubmittedAt.toDate()
-          : new Date(weeklyGoalsDoc.goalsSubmittedAt);
-        targetTime = submittedDate.getTime() + 7 * 24 * 60 * 60 * 1000;
-      } else {
-        // Fallback: 7 days from now
-        targetTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
-      }
-
-      const diff = targetTime - Date.now();
-      if (diff <= 0) {
-        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, expired: true });
-        return;
-      }
-
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const minutes = Math.floor((diff / 1000 / 60) % 60);
-      const seconds = Math.floor((diff / 1000) % 60);
-
-      setTimeLeft({ days, hours, minutes, seconds, expired: false });
-    };
-
-    calculateCountdown();
-    const interval = setInterval(calculateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [weekSettings?.completionDeadline, weeklyGoalsDoc?.goalsSubmittedAt]);
-
   // Save updated tasks array to Firestore
   const saveTasksToFirestore = async (newTasks) => {
     try {
-      const goalDocRef = doc(db, 'weekly_goals', `${user.uid}_${currentWeekId}`);
-      await updateDoc(goalDocRef, {
+      const docId = weeklyGoalsDoc?.id || `${user.uid}_${currentWeekId}`;
+      const goalDocRef = doc(db, 'weekly_goals', docId);
+      await setDoc(goalDocRef, {
         tasks: newTasks,
+        userId: user?.uid,
+        userName: userData?.name || user?.displayName || user?.email || 'Member',
+        profilePicUrl: userData?.profilePicUrl || user?.photoURL || '',
         updatedAt: serverTimestamp()
-      });
+      }, { merge: true });
       setTasks(newTasks);
       if (onGoalsUpdated) onGoalsUpdated(newTasks);
     } catch (err) {
@@ -179,7 +147,7 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
 
   return (
     <div style={{ marginTop: '1.5rem' }}>
-      {/* Kanban Header Bar with 7-Day Countdown */}
+      {/* Kanban Header Bar */}
       <div className="kanban-header-bar">
         <div>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Active Goals Execution Board</h2>
@@ -188,18 +156,9 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
           </p>
         </div>
 
-        <div className="kanban-timer">
-          <FiClock size={18} />
-          <span>
-            {timeLeft.expired ? (
-              <span style={{ color: 'var(--danger)' }}>CYCLE EXPIRED</span>
-            ) : (
-              `${timeLeft.days}d ${String(timeLeft.hours).padStart(2, '0')}h ${String(timeLeft.minutes).padStart(
-                2,
-                '0'
-              )}m ${String(timeLeft.seconds).padStart(2, '0')}s`
-            )}
-          </span>
+        <div className="kanban-timer" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)', color: '#10b981' }}>
+          <FiCheckCircle size={17} />
+          <span>Active Goal Cycle</span>
         </div>
       </div>
 
@@ -218,8 +177,8 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
           <div className="kanban-cards-list">
             {todoTasks.map((task) => (
               <div key={task.id} className="kanban-card">
-                <h4 className="kanban-card-title">{task.title}</h4>
-                {task.description && <p className="kanban-card-desc">{task.description}</p>}
+                <h4 className="kanban-card-title">{task.title || task.description || 'Untitled Goal'}</h4>
+                {task.title && task.description && <p className="kanban-card-desc">{task.description}</p>}
 
                 {task.deliverable && (
                   <div className="kanban-card-deliverable">
@@ -279,8 +238,8 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
                   </div>
                 )}
 
-                <h4 className="kanban-card-title">{task.title}</h4>
-                {task.description && <p className="kanban-card-desc">{task.description}</p>}
+                <h4 className="kanban-card-title">{task.title || task.description || 'Untitled Goal'}</h4>
+                {task.title && task.description && <p className="kanban-card-desc">{task.description}</p>}
 
                 {task.deliverable && (
                   <div className="kanban-card-deliverable">
@@ -330,7 +289,7 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
           <div className="kanban-cards-list">
             {submittedTasks.map((task) => (
               <div key={task.id} className="kanban-card" style={{ borderColor: 'rgba(245, 158, 11, 0.4)' }}>
-                <h4 className="kanban-card-title">{task.title}</h4>
+                <h4 className="kanban-card-title">{task.title || task.description || 'Untitled Goal'}</h4>
 
                 {/* Proof preview */}
                 <div className="proof-attached-badge">
@@ -420,7 +379,7 @@ export default function ActiveGoalsKanban({ user, userData, currentWeekId, weekl
           <div className="kanban-cards-list">
             {completedTasks.map((task) => (
               <div key={task.id} className="kanban-card" style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}>
-                <h4 className="kanban-card-title">{task.title}</h4>
+                <h4 className="kanban-card-title">{task.title || task.description || 'Untitled Goal'}</h4>
 
                 <div
                   style={{

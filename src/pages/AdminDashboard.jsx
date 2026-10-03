@@ -10,13 +10,17 @@ import {
   FiUsers, FiDollarSign, FiClock, FiCheckCircle, FiXCircle, FiFileText,
   FiSettings, FiTrash2, FiBell, FiStar, FiGrid, FiTarget, FiCalendar,
   FiShield, FiMenu, FiX, FiLogOut, FiSearch, FiMoreHorizontal, FiEdit2,
-  FiSlash, FiInfo, FiRefreshCw, FiZap, FiCreditCard, FiAward, FiSun, FiMoon
+  FiSlash, FiInfo, FiRefreshCw, FiZap, FiCreditCard, FiAward, FiSun, FiMoon, FiGift, FiUploadCloud, FiCheck,
+  FiSend, FiMessageSquare, FiAlertCircle
 } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 import './adminDashboard.css';
+import { uploadToCloudinary } from '../cloudinary';
+import BirthdayModal from '../components/BirthdayModal';
 
 // ---- WhatsApp notifications via Base44 backend function ----
 const NOTIFY_ENDPOINT = 'https://velo-af3ea2dd.base44.app/functions/tecNotifyEvent';
+const REMINDERS_ENDPOINT = 'https://velo-af3ea2dd.base44.app/functions/tecGoalReminders';
 
 async function sendWhatsappNotification(payload) {
   try {
@@ -56,6 +60,7 @@ export default function AdminDashboard({ user, userData }) {
   const [setupDeadline, setSetupDeadline]   = useState('');
   const [completionDeadline, setCompletionDeadline] = useState('');
   const [weekSettings, setWeekSettings]     = useState(null);
+  const [systemSettings, setSystemSettings] = useState(null);
 
   // Announcements state
   const [announcements, setAnnouncements]   = useState([]);
@@ -94,6 +99,26 @@ export default function AdminDashboard({ user, userData }) {
   const [detailModalUser, setDetailModalUser] = useState(null);
   const [showClockModal, setShowClockModal] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  // Birthday Celebration State
+  const [birthdayData, setBirthdayData]           = useState(null);
+  const [birthdayEnabled, setBirthdayEnabled]     = useState(false);
+  const [celebrantName, setCelebrantName]         = useState('');
+  const [celebrantRole, setCelebrantRole]         = useState('');
+  const [birthdayWishes, setBirthdayWishes]       = useState('Wishing you a fantastic birthday filled with joy, success and happiness. Hope you have a great year ahead!');
+  const [celebrantPhotoUrl, setCelebrantPhotoUrl] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto]   = useState(false);
+  const [uploadProgress, setUploadProgress]       = useState(0);
+  const [savingBirthday, setSavingBirthday]       = useState(false);
+  const [birthdayFeedback, setBirthdayFeedback]   = useState('');
+  const [selectedMemberId, setSelectedMemberId]   = useState('');
+
+  // Goal Reminders & WhatsApp Engine state
+  const [reminderReport, setReminderReport]             = useState(null);
+  const [loadingReminders, setLoadingReminders]         = useState(false);
+  const [dispatchingReminders, setDispatchingReminders] = useState(false);
+  const [reminderSearch, setReminderSearch]             = useState('');
+  const [isSyncingOptIn, setIsSyncingOptIn]             = useState(false);
 
   // Current week ID
   const currentWeekId = getWeekId(new Date());
@@ -150,6 +175,26 @@ export default function AdminDashboard({ user, userData }) {
       setPairings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
+    const unsubBirthday = onSnapshot(doc(db, 'system_data', 'birthday'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setBirthdayData(data);
+        setBirthdayEnabled(Boolean(data.enabled));
+        setCelebrantName(data.celebrantName || '');
+        setCelebrantRole(data.celebrantRole || '');
+        setBirthdayWishes(data.wishes || 'Wishing you a fantastic birthday filled with joy, success and happiness. Hope you have a great year ahead!');
+        setCelebrantPhotoUrl(data.photoUrl || '');
+      }
+    });
+
+    const unsubSystemSettings = onSnapshot(doc(db, 'system_data', 'settings'), (snap) => {
+      if (snap.exists()) {
+        setSystemSettings(snap.data());
+      } else {
+        setSystemSettings(null);
+      }
+    });
+
     return () => {
       unsubUsers();
       unsubSessions();
@@ -158,8 +203,37 @@ export default function AdminDashboard({ user, userData }) {
       unsubAnnouncements();
       unsubSystemWallet();
       unsubPairings();
+      unsubBirthday();
+      unsubSystemSettings();
     };
   }, [currentWeekId]);
+
+  // ── WhatsApp Opt-In Statistics & Auto-Sync ────────────────────────────────
+  const usersWithPhone = useMemo(() => {
+    return users.filter(u => Boolean(u.phoneNumber || u.whatsappNumber));
+  }, [users]);
+
+  const optedInUsers = useMemo(() => {
+    return users.filter(u => Boolean(u.whatsappOptIn));
+  }, [users]);
+
+  const missingOptInUsers = useMemo(() => {
+    return usersWithPhone.filter(u => u.whatsappOptIn !== true);
+  }, [usersWithPhone]);
+
+  // Auto-heal missing opt-ins in background whenever users are loaded
+  useEffect(() => {
+    if (missingOptInUsers.length > 0) {
+      missingOptInUsers.forEach((u) => {
+        const phone = u.whatsappNumber || u.phoneNumber;
+        updateDoc(doc(db, 'users', u.id), {
+          whatsappOptIn: true,
+          whatsappNumber: u.whatsappNumber || phone,
+          phoneNumber: u.phoneNumber || phone
+        }).catch((err) => console.warn('[Admin] Auto opt-in sync error for ' + u.id, err));
+      });
+    }
+  }, [missingOptInUsers]);
 
   // ── Auth Handlers ──────────────────────────────────────────────────────────
   const handleSignOut = async () => {
@@ -298,6 +372,95 @@ export default function AdminDashboard({ user, userData }) {
     await deleteDoc(doc(db, 'announcements', id));
   };
 
+  // ── Birthday Celebration Management ───────────────────────────────────────
+  const handleSelectCelebrantMember = (userId) => {
+    setSelectedMemberId(userId);
+    if (!userId) return;
+    const found = users.find(u => u.id === userId);
+    if (found) {
+      setCelebrantName(found.name || '');
+      setCelebrantRole(found.profession || '');
+      if (found.profilePicUrl) {
+        setCelebrantPhotoUrl(found.profilePicUrl);
+      }
+    }
+  };
+
+  const handleCelebrantPhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (JPG, PNG, WEBP).');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    setUploadProgress(0);
+    setBirthdayFeedback('');
+    try {
+      const uploadedUrl = await uploadToCloudinary(file, 'birthdays', (progress) => {
+        setUploadProgress(progress);
+      });
+      setCelebrantPhotoUrl(uploadedUrl);
+      setBirthdayFeedback('Photo uploaded successfully! Remember to save changes.');
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      alert('Failed to upload photo: ' + err.message);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const handleSaveBirthdayCelebration = async (overrideEnabled) => {
+    const isEnabled = typeof overrideEnabled === 'boolean' ? overrideEnabled : birthdayEnabled;
+    if (isEnabled && !celebrantName.trim()) {
+      alert('Please enter the celebrant name before enabling the birthday wish.');
+      return;
+    }
+
+    setSavingBirthday(true);
+    setBirthdayFeedback('');
+    try {
+      await setDoc(doc(db, 'system_data', 'birthday'), {
+        enabled: isEnabled,
+        celebrantName: celebrantName.trim(),
+        celebrantRole: celebrantRole.trim(),
+        wishes: birthdayWishes.trim(),
+        photoUrl: celebrantPhotoUrl,
+        updatedAt: serverTimestamp(),
+        updatedBy: user?.uid || 'admin'
+      }, { merge: true });
+
+      setBirthdayFeedback(isEnabled 
+        ? '🎉 Birthday celebration is now LIVE on the Live Feed!' 
+        : 'Birthday celebration saved (currently disabled).');
+      alert(isEnabled ? 'Birthday celebration is now LIVE on the Live Feed! 🎂' : 'Birthday celebration turned off.');
+    } catch (err) {
+      console.error('Error saving birthday celebration:', err);
+      alert('Failed to save celebration: ' + err.message);
+    } finally {
+      setSavingBirthday(false);
+    }
+  };
+
+  const handleToggleBirthday = async (nextState) => {
+    setBirthdayEnabled(nextState);
+    if (!nextState) {
+      // Immediately disable in Firestore so live feed removes it without delay
+      try {
+        await updateDoc(doc(db, 'system_data', 'birthday'), {
+          enabled: false,
+          updatedAt: serverTimestamp(),
+          updatedBy: user?.uid || 'admin'
+        });
+        setBirthdayFeedback('Birthday celebration turned off.');
+      } catch (err) {
+        console.error('Failed to disable birthday in Firestore:', err);
+      }
+    }
+  };
+
   // ── WhatsApp Meeting Reminders ─────────────────────────────────────────────
   const handleSendMeetingReminder = async (which) => {
     const when = which === 'wed' ? 'Wednesday 9:00 PM (Midweek Meeting)' : 'Sunday 9:00 PM (Weekly Review Meeting)';
@@ -319,6 +482,89 @@ export default function AdminDashboard({ user, userData }) {
       setMeetingSending(null);
     }
   };
+
+  // ── Goal Reminders & WhatsApp Opt-In Handlers ─────────────────────────────
+  const handleFetchReminderPreview = async () => {
+    setLoadingReminders(true);
+    try {
+      const res = await fetch(`${REMINDERS_ENDPOINT}?mode=dry`);
+      const data = await res.json();
+      setReminderReport(data);
+    } catch (err) {
+      console.error('Error fetching reminder preview:', err);
+      alert('Failed to load reminders preview: ' + err.message);
+    } finally {
+      setLoadingReminders(false);
+    }
+  };
+
+  const handleDispatchGoalReminders = async (mode = 'smart') => {
+    const isTemplate = mode === 'template';
+    const targetCount = reminderReport?.optedIn ?? optedInUsers.length;
+    const confirmPrompt = isTemplate
+      ? `Direct Meta Template Delivery:\n\nDispatch WhatsApp reminders to ${targetCount} member(s) using the approved 'deadline_alert' template?\n\n(Guaranteed to deliver even outside the Meta 24-hour window).`
+      : `Smart Dispatch:\n\nDispatch WhatsApp goal check-in reminders to ${targetCount} member(s)?\n\n(Sends personalized progress text with automated Meta template fallback if outside 24h window).`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    setDispatchingReminders(true);
+    try {
+      const res = await fetch(REMINDERS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dry: false,
+          delivery: isTemplate ? 'template' : 'text_with_template_fallback',
+          forceTemplate: isTemplate
+        })
+      });
+      const data = await res.json();
+      setReminderReport(data);
+      if (data.ok) {
+        alert(`🎉 Reminders Dispatched!\n\n• Successfully Sent: ${data.sent || 0}\n• Template Fallback Deliveries: ${data.fallbackSent || 0}\n• Blocked / Failed: ${data.blocked || 0}`);
+      } else {
+        alert('Dispatch completed with notes: ' + (data.error || 'Unknown status'));
+      }
+    } catch (err) {
+      console.error('Error dispatching reminders:', err);
+      alert('Failed to dispatch reminders: ' + err.message);
+    } finally {
+      setDispatchingReminders(false);
+    }
+  };
+
+  const handleSyncAllWhatsappOptIns = async () => {
+    if (missingOptInUsers.length === 0) {
+      alert(`All ${usersWithPhone.length} members with phone numbers are already opted-in! 🎉`);
+      return;
+    }
+    setIsSyncingOptIn(true);
+    try {
+      let count = 0;
+      for (const u of missingOptInUsers) {
+        const phone = u.whatsappNumber || u.phoneNumber;
+        await updateDoc(doc(db, 'users', u.id), {
+          whatsappOptIn: true,
+          whatsappNumber: u.whatsappNumber || phone,
+          phoneNumber: u.phoneNumber || phone
+        });
+        count++;
+      }
+      alert(`✅ Updated ${count} member(s). All ${usersWithPhone.length} members with phone numbers now have WhatsApp Opt-In enabled.`);
+    } catch (err) {
+      console.error('Error syncing WhatsApp opt-ins:', err);
+      alert('Failed to sync WhatsApp opt-ins: ' + err.message);
+    } finally {
+      setIsSyncingOptIn(false);
+    }
+  };
+
+  const filteredReminderResults = useMemo(() => {
+    const list = reminderReport?.results || [];
+    if (!reminderSearch.trim()) return list;
+    const q = reminderSearch.toLowerCase();
+    return list.filter(r => (r.name || '').toLowerCase().includes(q) || (r.phone || '').includes(q));
+  }, [reminderReport, reminderSearch]);
 
   // ── User Management Handlers ───────────────────────────────────────────────
   const handleApproveUser = async (userId, balance) => {
@@ -571,13 +817,21 @@ export default function AdminDashboard({ user, userData }) {
   };
 
   const handleTogglePeerGoals = async () => {
-    const nextState = !weekSettings?.peerGoalsEnabled;
+    const isCurrentlyEnabled = Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled ?? false);
+    const nextState = !isCurrentlyEnabled;
     try {
-      await setDoc(doc(db, 'week_settings', currentWeekId), {
-        peerGoalsEnabled: nextState,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      alert(`Peer Goal Suggestion feature is now ${nextState ? 'ENABLED' : 'DISABLED'} for ${currentWeekId}.`);
+      await Promise.all([
+        setDoc(doc(db, 'system_data', 'settings'), {
+          peerGoalsEnabled: nextState,
+          updatedAt: serverTimestamp(),
+          updatedBy: user?.uid || 'admin'
+        }, { merge: true }),
+        setDoc(doc(db, 'week_settings', currentWeekId), {
+          peerGoalsEnabled: nextState,
+          updatedAt: serverTimestamp()
+        }, { merge: true })
+      ]);
+      alert(`Peer Goal Suggestion feature is now ${nextState ? 'ENABLED' : 'DISABLED'}.`);
     } catch (err) {
       console.error('Error toggling peer goals:', err);
       alert('Failed to update peer goals setting.');
@@ -939,6 +1193,35 @@ export default function AdminDashboard({ user, userData }) {
     }
   };
 
+  const handleDeleteIndividualTask = async (goalDoc, taskIndex) => {
+    const taskToDelete = goalDoc.tasks?.[taskIndex];
+    const taskDesc = taskToDelete?.description || `Goal #${taskIndex + 1}`;
+    const memberName = goalDoc.userName || 'user';
+
+    if (!window.confirm(`Delete individual goal for ${memberName}?\n\n"${taskDesc}"\n\nThis will remove only this specific goal and keep their other goals.`)) {
+      return;
+    }
+
+    try {
+      const updatedTasks = (goalDoc.tasks || []).filter((_, i) => i !== taskIndex);
+      if (updatedTasks.length === 0) {
+        await deleteDoc(doc(db, 'weekly_goals', goalDoc.id));
+        alert(`Goal deleted. Since all goals for ${memberName} were deleted, the weekly submission was reset.`);
+      } else {
+        const allReviewed = updatedTasks.every(t => t.reviewed);
+        await updateDoc(doc(db, 'weekly_goals', goalDoc.id), {
+          tasks: updatedTasks,
+          reviewStatus: allReviewed ? 'reviewed' : 'in_review',
+          updatedAt: serverTimestamp()
+        });
+        alert(`Goal "${taskDesc}" has been deleted.`);
+      }
+    } catch (err) {
+      console.error('Error deleting individual goal:', err);
+      alert('Failed to delete goal: ' + err.message);
+    }
+  };
+
   // ── Weekly Evaluation ──────────────────────────────────────────────────────
   const handleEvaluateWeek = async () => {
     if (!window.confirm('Run the weekly evaluation? This will evaluate user performance, apply penalties, update streaks, and suspend accounts below balance.')) return;
@@ -1103,6 +1386,27 @@ export default function AdminDashboard({ user, userData }) {
         </div>
 
         <div className="admin-topbar-right">
+          {/* Direct Link to Member Dashboard */}
+          <Link
+            to="/dashboard"
+            className="admin-member-switch-btn"
+            title="Switch to Member Dashboard"
+          >
+            <span>Member Dashboard →</span>
+          </Link>
+
+          {/* Active Deadlines & Time Bell Icon */}
+          <button
+            className="admin-icon-btn"
+            onClick={() => setShowClockModal(!showClockModal)}
+            title="Active Week Deadlines & Time"
+          >
+            <FiBell size={17} />
+            {(weekSettings?.setupDeadline || weekSettings?.completionDeadline) && (
+              <span style={{ position: 'absolute', top: '6px', right: '6px', width: '7px', height: '7px', background: 'var(--tec-brand-violet)', borderRadius: '50%' }} />
+            )}
+          </button>
+
           {/* Theme Toggle (Light / Dark) */}
           <button
             className="admin-icon-btn"
@@ -1111,40 +1415,6 @@ export default function AdminDashboard({ user, userData }) {
             aria-label="Toggle Theme"
           >
             {theme === 'light' ? <FiMoon size={17} /> : <FiSun size={17} />}
-          </button>
-
-          {/* Clock button with deadline info toggle */}
-          <button
-            className="admin-icon-btn"
-            onClick={() => setShowClockModal(!showClockModal)}
-            title="Active Week Deadlines & Time"
-          >
-            <FiClock size={17} />
-            {(weekSettings?.setupDeadline || weekSettings?.completionDeadline) && (
-              <span style={{ position: 'absolute', top: '6px', right: '6px', width: '7px', height: '7px', background: 'var(--tec-brand-violet)', borderRadius: '50%' }} />
-            )}
-          </button>
-
-          {/* Admin role indicator pill */}
-          <div className="admin-role-pill active">
-            <FiSettings size={13} />
-            <span>Admin</span>
-          </div>
-
-          {/* Moderator link pill */}
-          <Link to="/moderator" className="admin-role-pill subtle">
-            Moderator
-          </Link>
-
-          {/* Member View shortcut link */}
-          <Link to="/dashboard" className="admin-role-pill subtle" title="View Member Dashboard">
-            Member View
-          </Link>
-
-          {/* Sign out button */}
-          <button onClick={handleSignOut} className="admin-signout-btn" title="Sign Out">
-            <FiLogOut size={14} />
-            <span>Sign Out</span>
           </button>
         </div>
       </header>
@@ -1193,6 +1463,21 @@ export default function AdminDashboard({ user, userData }) {
               </button>
 
               <button
+                className={`admin-nav-item ${activeTab === 'reminders' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('reminders');
+                  setIsSidebarOpen(false);
+                  if (!reminderReport) handleFetchReminderPreview();
+                }}
+              >
+                <span className="admin-nav-icon"><FiSend /></span>
+                <span>Goal Reminders</span>
+                {optedInUsers.length > 0 && (
+                  <span className="admin-badge success">{optedInUsers.length}</span>
+                )}
+              </button>
+
+              <button
                 className={`admin-nav-item ${activeTab === 'attendance' ? 'active' : ''}`}
                 onClick={() => { setActiveTab('attendance'); setIsSidebarOpen(false); }}
               >
@@ -1216,6 +1501,17 @@ export default function AdminDashboard({ user, userData }) {
                 <span>Announcements</span>
                 {announcements.filter(a => a.active).length > 0 && (
                   <span className="admin-badge success">{announcements.filter(a => a.active).length}</span>
+                )}
+              </button>
+
+              <button
+                className={`admin-nav-item ${activeTab === 'celebrations' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('celebrations'); setIsSidebarOpen(false); }}
+              >
+                <span className="admin-nav-icon"><FiGift /></span>
+                <span>Birthday Wish</span>
+                {birthdayEnabled && (
+                  <span className="admin-badge success">Live</span>
                 )}
               </button>
 
@@ -1251,6 +1547,18 @@ export default function AdminDashboard({ user, userData }) {
                   <span className="admin-badge success">{pairings.length}</span>
                 )}
               </button>
+
+              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+                <Link
+                  to="/dashboard"
+                  className="admin-nav-item"
+                  onClick={() => setIsSidebarOpen(false)}
+                  style={{ textDecoration: 'none', color: 'var(--primary)', fontWeight: '700' }}
+                >
+                  <span className="admin-nav-icon"><FiTarget /></span>
+                  <span>Member Dashboard →</span>
+                </Link>
+              </div>
             </nav>
           </div>
 
@@ -1268,6 +1576,18 @@ export default function AdminDashboard({ user, userData }) {
                 {isEvaluating ? 'Running…' : 'Run'}
               </button>
             </div>
+          </div>
+
+          {/* Sign Out Button in Left Column */}
+          <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--admin-border-subtle)' }}>
+            <button
+              onClick={handleSignOut}
+              className="admin-signout-sidebar-btn"
+              title="Sign Out"
+            >
+              <FiLogOut size={16} />
+              <span>Sign Out</span>
+            </button>
           </div>
         </aside>
 
@@ -1521,6 +1841,21 @@ export default function AdminDashboard({ user, userData }) {
                                     </button>
                                   )}
 
+                                  {/* Delete User Weekly Goal if submitted */}
+                                  {goalDocs.some(g => g.userId === u.id && g.weekId === currentWeekId) && (
+                                    <button
+                                      className="admin-dropdown-item danger"
+                                      onClick={() => {
+                                        setActionMenuUserId(null);
+                                        const userGoal = goalDocs.find(g => g.userId === u.id && g.weekId === currentWeekId);
+                                        if (userGoal) handleDeleteGoal(userGoal.id);
+                                      }}
+                                    >
+                                      <FiTarget size={13} color="#ef4444" />
+                                      <span>Delete Week's Goals</span>
+                                    </button>
+                                  )}
+
                                   {/* Reset User */}
                                   <button className="admin-dropdown-item" onClick={() => handleResetUser(u.id)}>
                                     <FiRefreshCw size={13} />
@@ -1609,7 +1944,18 @@ export default function AdminDashboard({ user, userData }) {
               {/* Quick Actions Shortcuts */}
               <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--admin-text-main)', marginBottom: '1rem' }}>Quick Actions</h3>
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <button onClick={() => setActiveTab('partners')} className="admin-role-pill active">
+                <button
+                  onClick={() => {
+                    setActiveTab('reminders');
+                    if (!reminderReport) handleFetchReminderPreview();
+                  }}
+                  className="admin-role-pill active"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <FiSend size={12} />
+                  <span>WhatsApp Goal Reminders</span>
+                </button>
+                <button onClick={() => setActiveTab('partners')} className="admin-role-pill subtle">
                   ⚡ Auto-Pair Members
                 </button>
                 <button onClick={() => setActiveTab('announcements')} className="admin-role-pill subtle">
@@ -1628,6 +1974,43 @@ export default function AdminDashboard({ user, userData }) {
           {/* ── TAB 3: REVIEW GOALS ─────────────────────────────────────────── */}
           {activeTab === 'goals' && (
             <div className="admin-card">
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(99, 102, 241, 0.05))',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: '14px',
+                padding: '0.85rem 1.15rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                marginBottom: '1.5rem',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                    <FiSend size={16} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--admin-text-main)' }}>
+                      WhatsApp Goal Reminders ({optedInUsers.length} Opted-In)
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-secondary)' }}>
+                      Inspect personalized check-ins or dispatch nudges to members for Week {currentWeekId}.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab('reminders');
+                    if (!reminderReport) handleFetchReminderPreview();
+                  }}
+                  className="admin-btn-run"
+                  style={{ fontSize: '0.78rem', padding: '0.4rem 0.85rem' }}
+                >
+                  Open Reminders Panel →
+                </button>
+              </div>
+
               <h2 className="admin-card-title" style={{ marginBottom: '0.5rem' }}>Review Weekly Goals</h2>
               <p style={{ color: 'var(--admin-text-secondary)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
                 Verify completed tasks with proof (+1 pt) or record uncompleted tasks (-1 pt).
@@ -1653,13 +2036,6 @@ export default function AdminDashboard({ user, userData }) {
                           <span className={`admin-status-pill ${g.reviewStatus === 'reviewed' ? 'active' : 'warning'}`}>
                             {g.reviewStatus === 'reviewed' ? '✓ Fully Reviewed' : g.reviewStatus === 'in_review' ? 'In Review' : '⏳ Pending Review'}
                           </span>
-                          <button
-                            onClick={() => handleDeleteGoal(g.id)}
-                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem' }}
-                            title="Delete submission"
-                          >
-                            <FiTrash2 size={15} />
-                          </button>
                         </div>
                       </div>
 
@@ -1670,13 +2046,14 @@ export default function AdminDashboard({ user, userData }) {
                               <th>Task Description</th>
                               <th>Status</th>
                               <th>Proof</th>
-                              <th>Admin Action</th>
+                              <th>Admin Verification</th>
+                              <th style={{ width: '90px', textAlign: 'center' }}>Delete Goal</th>
                             </tr>
                           </thead>
                           <tbody>
                             {(g.tasks || []).map((task, idx) => (
                               <tr key={idx}>
-                                <td style={{ maxWidth: '300px' }}>{task.description || '—'}</td>
+                                <td style={{ maxWidth: '300px' }}>{task.title || task.description || '—'}</td>
                                 <td>
                                   <span className={`admin-status-pill ${task.status === 'Completed' ? 'active' : task.status === 'Not Completed' ? 'suspended' : 'warning'}`}>
                                     {task.status || 'Pending'}
@@ -1745,6 +2122,28 @@ export default function AdminDashboard({ user, userData }) {
                                       )}
                                     </div>
                                   )}
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <button
+                                    className="admin-btn-run"
+                                    style={{
+                                      background: 'rgba(239, 68, 68, 0.12)',
+                                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                                      color: '#ef4444',
+                                      padding: '0.28rem 0.55rem',
+                                      fontSize: '0.74rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem'
+                                    }}
+                                    onClick={() => handleDeleteIndividualTask(g, idx)}
+                                    title={`Delete individual goal: "${task.description}"`}
+                                  >
+                                    <FiTrash2 size={12} />
+                                    <span>Delete</span>
+                                  </button>
                                 </td>
                               </tr>
                             ))}
@@ -1943,12 +2342,12 @@ export default function AdminDashboard({ user, userData }) {
                   onClick={handleTogglePeerGoals}
                   className="admin-btn-run"
                   style={{
-                    background: weekSettings?.peerGoalsEnabled ? '#10b981' : 'var(--admin-border-medium)',
+                    background: (weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) ? '#10b981' : 'var(--admin-border-medium)',
                     color: 'white',
                     minWidth: '120px'
                   }}
                 >
-                  {weekSettings?.peerGoalsEnabled ? '✓ Enabled' : 'Disabled (Click to Enable)'}
+                  {(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) ? '✓ Enabled' : 'Disabled (Click to Enable)'}
                 </button>
               </div>
 
@@ -2038,6 +2437,279 @@ export default function AdminDashboard({ user, userData }) {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB: BIRTHDAY CELEBRATION ──────────────────────────────────── */}
+          {activeTab === 'celebrations' && (
+            <div className="admin-card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div>
+                  <h2 className="admin-card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <FiGift color="var(--tec-brand-violet)" /> Birthday Celebration Pop-up
+                  </h2>
+                  <p style={{ color: 'var(--admin-text-secondary)', fontSize: '0.85rem', margin: '0.4rem 0 0' }}>
+                    Configure the celebratory birthday flyer card that pops up on the Live Feed for all members.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: birthdayEnabled ? 'var(--tec-brand-emerald)' : 'var(--admin-text-muted)' }}>
+                    {birthdayEnabled ? '● Currently Active on Live Feed' : '○ Currently Inactive'}
+                  </span>
+                </div>
+              </div>
+
+              {birthdayFeedback && (
+                <div style={{
+                  padding: '0.85rem 1.25rem',
+                  borderRadius: '12px',
+                  marginBottom: '1.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  background: birthdayFeedback.includes('failed') || birthdayFeedback.includes('error') ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                  color: birthdayFeedback.includes('failed') || birthdayFeedback.includes('error') ? '#ef4444' : '#10b981',
+                  border: `1px solid ${birthdayFeedback.includes('failed') || birthdayFeedback.includes('error') ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                }}>
+                  {birthdayFeedback}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '2rem', alignItems: 'start' }}>
+                
+                {/* ── Left Column: Form Controls ── */}
+                <div className="admin-subcard" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  
+                  {/* Enable / Disable Toggle Switch */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '14px', border: '1px solid var(--admin-border-subtle)' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--admin-text-main)' }}>Enable Birthday Wish Pop-up</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--admin-text-secondary)', marginTop: '2px' }}>
+                        When turned ON, members will see the birthday flyer modal when opening the Live Feed.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBirthday(!birthdayEnabled)}
+                      style={{
+                        padding: '0.55rem 1.1rem',
+                        borderRadius: '20px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        background: birthdayEnabled ? '#10b981' : 'var(--admin-border-medium)',
+                        color: '#ffffff',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        flexShrink: 0
+                      }}
+                    >
+                      {birthdayEnabled ? '✓ Enabled' : 'Disabled'}
+                    </button>
+                  </div>
+
+                  {/* Auto-fill from member selector */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--admin-text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
+                      Quick Fill from Community Members (Optional)
+                    </label>
+                    <select
+                      className="admin-search-input"
+                      value={selectedMemberId}
+                      onChange={(e) => handleSelectCelebrantMember(e.target.value)}
+                    >
+                      <option value="">-- Choose a member to auto-fill details --</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>
+                          {u.name || u.email} {u.profession ? `(${u.profession})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Celebrant Name Input */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--admin-text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
+                      Celebrant Full Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="admin-search-input"
+                      placeholder="e.g. Buchi Mbam"
+                      value={celebrantName}
+                      onChange={(e) => setCelebrantName(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Celebrant Role / Title */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--admin-text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
+                      Celebrant Role / Title (displayed on indigo badge)
+                    </label>
+                    <input
+                      type="text"
+                      className="admin-search-input"
+                      placeholder="e.g. Nurse, Data Analyst"
+                      value={celebrantRole}
+                      onChange={(e) => setCelebrantRole(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Picture Upload via Cloudinary */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--admin-text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
+                      Celebrant Picture (Upload or URL)
+                    </label>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="file"
+                          id="celebrantPhotoInput"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={handleCelebrantPhotoUpload}
+                        />
+                        <label
+                          htmlFor="celebrantPhotoInput"
+                          className="admin-btn-run"
+                          style={{
+                            cursor: isUploadingPhoto ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.55rem 1rem',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <FiUploadCloud size={16} />
+                          <span>{isUploadingPhoto ? `Uploading (${uploadProgress}%)...` : 'Upload Picture'}</span>
+                        </label>
+
+                        {celebrantPhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setCelebrantPhotoUrl('')}
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#ef4444',
+                              borderRadius: '7px',
+                              padding: '0.5rem 0.8rem',
+                              fontSize: '0.8rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      {isUploadingPhoto && (
+                        <div style={{ width: '100%', height: '6px', background: 'var(--admin-border-subtle)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'var(--tec-brand-violet)', transition: 'width 0.2s ease' }} />
+                        </div>
+                      )}
+
+                      <input
+                        type="url"
+                        className="admin-search-input"
+                        placeholder="Or paste direct image URL (https://...)"
+                        value={celebrantPhotoUrl}
+                        onChange={(e) => setCelebrantPhotoUrl(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Birthday Wishes Message */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--admin-text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
+                      Birthday Wishes Message
+                    </label>
+                    <textarea
+                      className="admin-search-input"
+                      rows={4}
+                      style={{ resize: 'vertical', minHeight: '90px' }}
+                      placeholder="Wishing you a fantastic birthday filled with joy, success and happiness. Hope you have a great year ahead!"
+                      value={birthdayWishes}
+                      onChange={(e) => setBirthdayWishes(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Save & Publish Action */}
+                  <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={handleSaveBirthdayCelebration}
+                      disabled={savingBirthday || isUploadingPhoto}
+                      className="admin-btn-run"
+                      style={{
+                        padding: '0.75rem 1.75rem',
+                        fontSize: '0.95rem',
+                        background: 'linear-gradient(135deg, #4f46e5, #6366f1)',
+                        cursor: (savingBirthday || isUploadingPhoto) ? 'not-allowed' : 'pointer',
+                        opacity: (savingBirthday || isUploadingPhoto) ? 0.7 : 1
+                      }}
+                    >
+                      {savingBirthday ? 'Saving...' : '💾 Save & Publish Changes'}
+                    </button>
+
+                    {birthdayEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBirthdayEnabled(false);
+                          handleSaveBirthdayCelebration(false);
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          color: '#ef4444',
+                          padding: '0.7rem 1.1rem',
+                          borderRadius: '8px',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Turn Off Celebration
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Right Column: Live Card Preview ── */}
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--admin-text-main)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Live Interactive Card Preview</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--admin-text-secondary)', fontWeight: 500 }}>Exact representation of member modal</span>
+                  </div>
+
+                  <div style={{
+                    background: 'rgba(15, 23, 42, 0.65)',
+                    padding: '1.5rem',
+                    borderRadius: '24px',
+                    border: '1px solid var(--admin-border-subtle)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center'
+                  }}>
+                    <BirthdayModal
+                      isOpen={true}
+                      isPreview={true}
+                      celebrationData={{
+                        celebrantName: celebrantName || 'Celebrant Name',
+                        celebrantRole: celebrantRole || 'Role / Profession',
+                        photoUrl: celebrantPhotoUrl,
+                        wishes: birthdayWishes
+                      }}
+                    />
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
@@ -2263,6 +2935,219 @@ export default function AdminDashboard({ user, userData }) {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 10: GOAL REMINDERS (WHATSAPP ENGINE) ───────────────────── */}
+          {activeTab === 'reminders' && (
+            <div className="admin-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <h2 className="admin-card-title" style={{ marginBottom: '0.4rem' }}>
+                    WhatsApp Goal Reminders & Nudges
+                  </h2>
+                  <p style={{ color: 'var(--admin-text-secondary)', fontSize: '0.85rem' }}>
+                    Inspect personalized member check-ins, verify opt-in status, and dispatch nudges to members via WhatsApp Cloud API.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span className="admin-status-pill active" style={{ fontSize: '0.75rem' }}>
+                    Week: {currentWeekId}
+                  </span>
+                  <span className="admin-status-pill warning" style={{ fontSize: '0.75rem' }}>
+                    Bot: +234 902 667 5879
+                  </span>
+                </div>
+              </div>
+
+              {/* Opt-In Health & Sync Card */}
+              <div className="admin-subcard" style={{ marginBottom: '1.5rem', background: 'var(--admin-bg-card-hover)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <FiMessageSquare size={16} color="var(--tec-brand-violet)" />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--admin-text-main)' }}>
+                      WhatsApp Opt-In Health
+                    </span>
+                  </div>
+                  {missingOptInUsers.length > 0 ? (
+                    <button
+                      onClick={handleSyncAllWhatsappOptIns}
+                      disabled={isSyncingOptIn}
+                      className="admin-btn-run"
+                      style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', padding: '0.35rem 0.85rem', fontSize: '0.78rem' }}
+                    >
+                      <FiRefreshCw className={isSyncingOptIn ? 'spin' : ''} size={12} />
+                      <span>{isSyncingOptIn ? 'Syncing...' : `Opt-In ${missingOptInUsers.length} Member(s) Now`}</span>
+                    </button>
+                  ) : (
+                    <span className="admin-status-pill active" style={{ fontSize: '0.75rem' }}>
+                      <FiCheckCircle size={12} />
+                      <span>100% of phone users opted in</span>
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+                  <div style={{ background: 'var(--admin-bg-input)', padding: '0.75rem', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-secondary)', textTransform: 'uppercase' }}>Total Members</div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--admin-text-main)' }}>{users.length}</div>
+                  </div>
+                  <div style={{ background: 'var(--admin-bg-input)', padding: '0.75rem', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-secondary)', textTransform: 'uppercase' }}>Phones on File</div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--tec-brand-blue)' }}>{usersWithPhone.length}</div>
+                  </div>
+                  <div style={{ background: 'var(--admin-bg-input)', padding: '0.75rem', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-secondary)', textTransform: 'uppercase' }}>WhatsApp Opted-In</div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--tec-brand-emerald)' }}>{optedInUsers.length}</div>
+                  </div>
+                  <div style={{ background: 'var(--admin-bg-input)', padding: '0.75rem', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-secondary)', textTransform: 'uppercase' }}>Pending Opt-In</div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 800, color: missingOptInUsers.length > 0 ? 'var(--tec-brand-coral)' : 'var(--admin-text-muted)' }}>
+                      {missingOptInUsers.length}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action & Dispatch Controls */}
+              <div className="admin-subcard" style={{ marginBottom: '1.75rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--admin-text-main)', marginBottom: '0.85rem' }}>
+                  Dispatch Reminders for Week {currentWeekId}
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={handleFetchReminderPreview}
+                    disabled={loadingReminders}
+                    className="admin-role-pill active"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer', padding: '0.55rem 1rem' }}
+                  >
+                    <FiRefreshCw className={loadingReminders ? 'spin' : ''} size={13} />
+                    <span>{loadingReminders ? 'Refreshing Preview...' : 'Refresh Live Preview'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleDispatchGoalReminders('smart')}
+                    disabled={dispatchingReminders}
+                    className="admin-btn-run"
+                    style={{ padding: '0.55rem 1.15rem' }}
+                  >
+                    <FiSend size={13} />
+                    <span>{dispatchingReminders ? 'Dispatching...' : 'Smart Dispatch (Text + Fallback)'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleDispatchGoalReminders('template')}
+                    disabled={dispatchingReminders}
+                    className="admin-btn-run"
+                    style={{ background: 'linear-gradient(135deg, #0d9488, #0f766e)', padding: '0.55rem 1.15rem' }}
+                  >
+                    <FiCheck size={13} />
+                    <span>Direct Meta Template Dispatch</span>
+                  </button>
+                </div>
+                <div style={{ marginTop: '0.65rem', fontSize: '0.76rem', color: 'var(--admin-text-secondary)' }}>
+                  💡 <strong>Smart Dispatch</strong> sends custom goal breakdown and falls back to template if outside 24h window. <strong>Direct Meta Template</strong> uses the approved <code>deadline_alert</code> template for guaranteed 100% delivery.
+                </div>
+              </div>
+
+              {/* Reminder Preview & Search */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--admin-text-main)' }}>
+                    Recipient Preview ({filteredReminderResults.length})
+                  </div>
+                  <div style={{ position: 'relative', minWidth: '220px' }}>
+                    <FiSearch style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--admin-text-secondary)', fontSize: '0.8rem' }} />
+                    <input
+                      type="text"
+                      className="admin-search-input"
+                      placeholder="Search member or phone..."
+                      value={reminderSearch}
+                      onChange={(e) => setReminderSearch(e.target.value)}
+                      style={{ paddingLeft: '2rem', height: '34px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+
+                {loadingReminders ? (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--admin-text-secondary)' }}>
+                    <FiRefreshCw className="spin" size={28} style={{ marginBottom: '0.75rem' }} />
+                    <p>Generating personalized reminder previews from live Firestore goals...</p>
+                  </div>
+                ) : !reminderReport ? (
+                  <div className="admin-subcard" style={{ textAlign: 'center', padding: '2.5rem' }}>
+                    <FiMessageSquare size={32} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
+                    <p style={{ color: 'var(--admin-text-secondary)', fontSize: '0.88rem', marginBottom: '1rem' }}>
+                      Click below to load live reminder preview for all opted-in members.
+                    </p>
+                    <button onClick={handleFetchReminderPreview} className="admin-btn-run" style={{ margin: '0 auto' }}>
+                      Load Live Preview
+                    </button>
+                  </div>
+                ) : filteredReminderResults.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--admin-text-secondary)' }}>
+                    No matching members found for "{reminderSearch}".
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+                    {filteredReminderResults.map((item, idx) => {
+                      const isComplete = (item.textPreview || item.preview || '').includes('100%');
+                      const isNotSet = (item.textPreview || item.preview || '').includes('not set yet');
+                      return (
+                        <div key={item.id || idx} className="admin-subcard" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1rem 1.15rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                              <div>
+                                <strong style={{ color: 'var(--admin-text-main)', fontSize: '0.92rem' }}>{item.name}</strong>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-secondary)' }}>
+                                  +{item.phone}
+                                </div>
+                              </div>
+                              <span className={`admin-status-pill ${isComplete ? 'active' : isNotSet ? 'warning' : 'subtle'}`} style={{ fontSize: '0.72rem' }}>
+                                {isComplete ? '🏆 100% Done' : isNotSet ? '⏳ Not Set Yet' : '🔥 In Progress'}
+                              </span>
+                            </div>
+
+                            <div style={{
+                              background: 'var(--admin-bg-input)',
+                              padding: '0.75rem 0.85rem',
+                              borderRadius: '10px',
+                              fontSize: '0.78rem',
+                              lineHeight: '1.45',
+                              color: 'var(--admin-text-main)',
+                              whiteSpace: 'pre-wrap',
+                              fontFamily: 'monospace',
+                              marginBottom: '0.65rem'
+                            }}>
+                              {item.textPreview || item.preview}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--admin-text-secondary)', borderTop: '1px solid var(--admin-border-subtle)', paddingTop: '0.5rem' }}>
+                            <span>Template: <code>{item.templateName || 'deadline_alert'}</code></span>
+                            <span style={{ color: item.status === 'sent' ? 'var(--tec-brand-emerald)' : 'var(--admin-text-muted)' }}>
+                              {item.status ? `Status: ${item.status}` : 'Ready to Send'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Meta Cloud API Guide */}
+              <div className="admin-subcard" style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', color: 'var(--tec-brand-violet)', fontWeight: 700, fontSize: '0.85rem' }}>
+                  <FiInfo size={15} />
+                  <span>Meta WhatsApp Cloud API Delivery Policy</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--admin-text-secondary)', lineHeight: '1.5' }}>
+                  • <strong>24-Hour Customer Care Window:</strong> Meta requires members to message the TEC bot (<code>+234 902 667 5879</code>) at least once every 24 hours to receive freeform AI updates.<br />
+                  • <strong>Guaranteed Delivery:</strong> For members whose 24-hour window has expired, reminders automatically fall back to or directly use approved Meta templates (e.g. <code>deadline_alert</code>).<br />
+                  • <strong>1-on-1 Chats:</strong> WhatsApp Cloud API does not support posting to consumer WhatsApp groups. All reminders are sent as individual 1-on-1 messages to keep each member directly accountable.
+                </div>
               </div>
             </div>
           )}

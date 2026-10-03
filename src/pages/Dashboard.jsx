@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { db } from '../firebase';
+import { Link, useNavigate } from 'react-router-dom';
+import { auth, db } from '../firebase';
+import { signOut } from 'firebase/auth';
 import { doc, updateDoc, serverTimestamp, setDoc, getDoc, collection, query, where, getDocs, addDoc, increment, limit } from 'firebase/firestore';
 import { uploadToCloudinary } from '../cloudinary';
 import { FiCamera, FiAlertCircle, FiSave, FiDollarSign, FiShield, FiTrendingUp, FiDownload, FiStar, FiActivity, FiZap, FiAward, FiUser, FiCheckCircle } from 'react-icons/fi';
+import { LuLayoutDashboard, LuTarget, LuEye, LuZap, LuCalendar, LuUsers, LuUser, LuWallet, LuTrophy, LuClock, LuStar, LuChevronDown, LuPlus, LuFileText, LuDownload, LuCamera, LuInbox, LuRadio, LuShield, LuSettings, LuMenu, LuX, LuLogOut } from 'react-icons/lu';
 import { onSnapshot } from 'firebase/firestore';
 import { getWeekId } from '../utils/weekUtils';
 import './dashboard.css';
@@ -18,8 +20,21 @@ const normalizeWhatsApp = (raw) => {
   return digits;
 };
 
-export default function Dashboard({ user, userData }) {
+export default function Dashboard({ user, userData, isMobileSidebarOpen: externalSidebarOpen, setIsMobileSidebarOpen: setExternalSidebarOpen }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('goals');
+  const [localMobileSidebarOpen, setLocalMobileSidebarOpen] = useState(false);
+  const isMobileSidebarOpen = externalSidebarOpen !== undefined ? externalSidebarOpen : localMobileSidebarOpen;
+  const setIsMobileSidebarOpen = setExternalSidebarOpen || setLocalMobileSidebarOpen;
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out', error);
+    }
+  };
 
   // Profile State
   const [name, setName] = useState(userData?.name || '');
@@ -32,6 +47,19 @@ export default function Dashboard({ user, userData }) {
     const existing = userData?.whatsappNumber || userData?.phoneNumber || '';
     if (existing) setWhatsappNumber(existing);
   }, [userData?.whatsappNumber, userData?.phoneNumber]);
+
+  // Auto-heal WhatsApp opt-in for existing users who have a phone number on file
+  useEffect(() => {
+    if (user?.uid && userData && (userData.phoneNumber || userData.whatsappNumber) && userData.whatsappOptIn !== true) {
+      const phone = userData.whatsappNumber || userData.phoneNumber;
+      updateDoc(doc(db, "users", user.uid), {
+        whatsappOptIn: true,
+        whatsappNumber: userData.whatsappNumber || phone,
+        phoneNumber: userData.phoneNumber || phone
+      }).catch((err) => console.warn('Auto-optIn error:', err));
+    }
+  }, [user?.uid, userData]);
+
   const [socials, setSocials] = useState(userData?.socials || { twitter: '', instagram: '', linkedin: '', github: '' });
   const [profilePic, setProfilePic] = useState(userData?.profilePicUrl || '');
   const [uploading, setUploading] = useState(false);
@@ -58,6 +86,7 @@ export default function Dashboard({ user, userData }) {
   const [submittingGoals, setSubmittingGoals] = useState(false);
   const [goalsSubmitted, setGoalsSubmitted] = useState(false);
   const [weekSettings, setWeekSettings] = useState(null);
+  const [systemSettings, setSystemSettings] = useState(null);
   const [currentWeekId, setCurrentWeekId] = useState('');
   const [weeklyPoints, setWeeklyPoints] = useState(0);
   const [totalPoints, setTotalPoints] = useState(userData?.totalPoints || 0);
@@ -95,11 +124,12 @@ export default function Dashboard({ user, userData }) {
 
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
 
-  // Derive Lockout Status
-  const isLockedOut = userData?.walletBalance < 1000;
+  // Derive Lockout Status (Admins exempt)
+  const isLockedOut = !userData?.isAdmin && ((userData?.walletBalance || 0) < 1000);
 
-  // Fetch existing goals for the current week
+  // Fetch existing goals for the current week (or active previous cycle if current is empty)
   useEffect(() => {
+    let unsubSettings = () => {};
     const fetchCurrentWeekGoals = async () => {
       if (!user) return;
       const now = new Date();
@@ -108,14 +138,45 @@ export default function Dashboard({ user, userData }) {
 
       const goalDocRef = doc(db, 'weekly_goals', `${user.uid}_${weekId}`);
       const docSnap = await getDoc(goalDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+      if (docSnap.exists() && docSnap.data()?.tasks?.length > 0) {
+        const data = { id: docSnap.id, ...docSnap.data() };
         setWeeklyGoalsDoc(data);
         setWeeklyPoints(data.weeklyPoints || 0);
-        if (data.tasks && data.tasks.length > 0) {
-          setTasks(data.tasks);
-          setGoalsSubmitted(true);
-        } else {
+        setTasks(data.tasks);
+        setGoalsSubmitted(true);
+      } else {
+        // Fallback: check most recent weekly_goals for this user so goals don't disappear across week changes
+        let foundRecent = false;
+        try {
+          const qRecent = query(
+            collection(db, 'weekly_goals'),
+            where('userId', '==', user.uid)
+          );
+          const recentSnap = await getDocs(qRecent);
+          if (!recentSnap.empty) {
+            const allUserDocs = recentSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            allUserDocs.sort((a, b) => (b.weekId || '').localeCompare(a.weekId || ''));
+            const latestWithTasks = allUserDocs.find(d => d.tasks && d.tasks.length > 0);
+            if (latestWithTasks) {
+              setWeeklyGoalsDoc(latestWithTasks);
+              setWeeklyPoints(latestWithTasks.weeklyPoints || 0);
+              setTasks(latestWithTasks.tasks);
+              setGoalsSubmitted(true);
+              foundRecent = true;
+            }
+          }
+        } catch (e) {
+          console.warn('Error fetching fallback recent goals:', e);
+        }
+
+        if (!foundRecent) {
+          if (docSnap.exists()) {
+            const data = { id: docSnap.id, ...docSnap.data() };
+            setWeeklyGoalsDoc(data);
+            setWeeklyPoints(data.weeklyPoints || 0);
+          } else {
+            setWeeklyGoalsDoc(null);
+          }
           setGoalsSubmitted(false);
           setTasks([
             { id: 1, description: '', status: '', penalty: '0', proofText: '', proofImage: '', uploadingProof: false },
@@ -123,24 +184,33 @@ export default function Dashboard({ user, userData }) {
             { id: 3, description: '', status: '', penalty: '0', proofText: '', proofImage: '', uploadingProof: false }
           ]);
         }
-      } else {
-        setWeeklyGoalsDoc(null);
-        setGoalsSubmitted(false);
       }
 
       // Fetch week settings
-      const unsubSettings = onSnapshot(doc(db, 'week_settings', weekId), (snap) => {
+      unsubSettings = onSnapshot(doc(db, 'week_settings', weekId), (snap) => {
         if (snap.exists()) {
           setWeekSettings(snap.data());
         } else {
           setWeekSettings(null);
         }
       });
-      return () => unsubSettings();
     };
 
     fetchCurrentWeekGoals();
+    return () => unsubSettings();
   }, [user]);
+
+  // Listen to system settings (global fallback for peer goals & feature toggles)
+  useEffect(() => {
+    const unsubSystem = onSnapshot(doc(db, 'system_data', 'settings'), (snap) => {
+      if (snap.exists()) {
+        setSystemSettings(snap.data());
+      } else {
+        setSystemSettings(null);
+      }
+    });
+    return () => unsubSystem();
+  }, []);
 
   // Listen to system wallet
   useEffect(() => {
@@ -153,19 +223,26 @@ export default function Dashboard({ user, userData }) {
     return () => unsub();
   }, [user]);
 
-  // Listen to grace requests in real-time
+  // Listen to active goal document in real-time
   useEffect(() => {
-    if (!user || !currentWeekId) return;
-    const goalDocRef = doc(db, 'weekly_goals', `${user.uid}_${currentWeekId}`);
+    if (!user) return;
+    const docId = weeklyGoalsDoc?.id || (currentWeekId ? `${user.uid}_${currentWeekId}` : null);
+    if (!docId) return;
+    const goalDocRef = doc(db, 'weekly_goals', docId);
     const unsub = onSnapshot(goalDocRef, (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
+        const data = { id: snap.id, ...snap.data() };
+        setWeeklyGoalsDoc(data);
+        if (data.tasks && data.tasks.length > 0) {
+          setTasks(data.tasks);
+          setGoalsSubmitted(true);
+        }
         setGraceRequest(data.graceRequest || null);
         setWeeklyPoints(data.weeklyPoints || 0);
       }
     });
     return () => unsub();
-  }, [user, currentWeekId]);
+  }, [user, currentWeekId, weeklyGoalsDoc?.id]);
 
   // Fetch Monthly Vision
   useEffect(() => {
@@ -805,6 +882,7 @@ export default function Dashboard({ user, userData }) {
     ? nextCheckpoint.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : 'Awaiting this week’s schedule';
   const memberStatus = userData?.status || 'Active';
+  const isPeerGoalsActive = weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled ?? false;
 
   const handleRequestGrace = async (type, paymentMethod) => {
     // type: 'setup' | 'completion'
@@ -902,202 +980,328 @@ export default function Dashboard({ user, userData }) {
   );
 
   return (
-    <div className="member-dashboard">
+    <div className="member-dashboard-wrapper">
 
       {/* Grace Modal */}
       {showGraceModal && <GracePeriodModal type={showGraceModal} onClose={() => setShowGraceModal(null)} />}
 
-      {/* ── Setup Deadline Banners ── */}
-      {isPastSetup && !goalsSubmitted && !setupGraceActive && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', borderLeft: '4px solid var(--danger)', padding: '1rem 1.25rem', marginBottom: '1rem', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <FiAlertCircle color="var(--danger)" size={20} />
-              <div>
-                <strong>Goal Setting Deadline Missed</strong>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Deadline was {setupDeadline?.toLocaleString()}. Your goal form is locked.
-                </div>
-              </div>
-            </div>
-            {setupGrace?.status === 'pending' ? (
-              <span style={{ padding: '0.3rem 0.75rem', background: 'rgba(245,158,11,0.2)', color: 'var(--warning)', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700' }}>
-                ⏳ Grace Request Pending Admin Approval
-              </span>
-            ) : (
-              <button onClick={() => setShowGraceModal('setup')} className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                Request Grace Period
+      {/* Mobile Drawer Backdrop */}
+      {isMobileSidebarOpen && (
+        <div className="dashboard-sidebar-backdrop" onClick={() => setIsMobileSidebarOpen(false)} />
+      )}
+
+      {/* ── Two-Column Layout ── */}
+      <div className="dashboard-layout">
+        {/* 1. SIDEBAR (Sticky, Full-Height, Left-Flush) */}
+        <aside className={`dashboard-sidebar ${isMobileSidebarOpen ? 'open' : ''}`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <div className="dashboard-sidebar-header">Accountability</div>
+            <nav className="dashboard-sidebar-nav" aria-label="Accountability sections">
+              <button
+                type="button"
+                onClick={() => { setActiveTab('goals'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'goals' ? 'active' : ''}`}
+              >
+                <LuTarget size={16} />
+                <span>Weekly goals</span>
               </button>
-            )}
-          </div>
-        </div>
-      )}
-      {isPastSetup && setupGraceActive && (
-        <div style={{ background: 'rgba(16,185,129,0.1)', borderLeft: '4px solid #10b981', padding: '1rem 1.25rem', marginBottom: '1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <FiAlertCircle color="#10b981" size={20} />
-          <div>
-            <strong style={{ color: '#10b981' }}>Grace Period Active</strong>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Your grace period for goal setting expires: <strong>{setupGraceDeadline?.toLocaleString()}</strong>. Set your goals before then!
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Completion Deadline Banners ── */}
-      {isPastCompletion && !completionGraceActive && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', borderLeft: '4px solid var(--danger)', padding: '1rem 1.25rem', marginBottom: '1rem', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <FiAlertCircle color="var(--danger)" size={20} />
-              <div>
-                <strong>Task Submission Deadline Missed</strong>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Deadline was {completionDeadline?.toLocaleString()}. Goals are locked for review.
-                </div>
-              </div>
-            </div>
-            {completionGrace?.status === 'pending' ? (
-              <span style={{ padding: '0.3rem 0.75rem', background: 'rgba(245,158,11,0.2)', color: 'var(--warning)', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700' }}>
-                ⏳ Grace Request Pending Admin Approval
-              </span>
-            ) : goalsSubmitted ? (
-              <button onClick={() => setShowGraceModal('completion')} className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                Request Grace Period
+              <button
+                type="button"
+                onClick={() => { setActiveTab('vision'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'vision' ? 'active' : ''}`}
+              >
+                <LuEye size={16} />
+                <span>Monthly vision</span>
               </button>
-            ) : null}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('streak'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'streak' ? 'active' : ''}`}
+              >
+                <LuZap size={16} />
+                <span>Daily Check-In</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('attendance'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'attendance' ? 'active' : ''}`}
+              >
+                <LuCalendar size={16} />
+                <span>Attendance</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('partner'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'partner' ? 'active' : ''}`}
+              >
+                <LuUsers size={16} />
+                <span>Partner</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('profile'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'profile' ? 'active' : ''}`}
+              >
+                <LuUser size={16} />
+                <span>Profile</span>
+              </button>
+            </nav>
+
+            <div className="dashboard-sidebar-header" style={{ marginTop: '1.25rem' }}>Community</div>
+            <nav className="dashboard-sidebar-nav" aria-label="Community spaces">
+              {Boolean(isPeerGoalsActive) && (
+                <Link
+                  to="/members"
+                  className="dashboard-nav-item"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                >
+                  <LuUsers size={16} />
+                  <span>Members</span>
+                </Link>
+              )}
+              {Boolean(isPeerGoalsActive) && (
+                <Link
+                  to="/goals-inbox"
+                  className="dashboard-nav-item"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                >
+                  <LuInbox size={16} />
+                  <span>Goals Inbox</span>
+                </Link>
+              )}
+              <Link
+                to="/livefeed"
+                className="dashboard-nav-item"
+                onClick={() => setIsMobileSidebarOpen(false)}
+              >
+                <LuRadio size={16} />
+                <span>Live Feed</span>
+              </Link>
+              {userData?.isModerator && (
+                <Link
+                  to="/moderator"
+                  className="dashboard-nav-item dashboard-mod-link"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                >
+                  <LuShield size={16} />
+                  <span>Moderator Hub</span>
+                </Link>
+              )}
+              {userData?.isAdmin && (
+                <Link
+                  to="/admin"
+                  className="dashboard-nav-item dashboard-admin-link"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                >
+                  <LuSettings size={16} />
+                  <span>Admin Console</span>
+                </Link>
+              )}
+            </nav>
           </div>
-        </div>
-      )}
-      {isPastCompletion && completionGraceActive && (
-        <div style={{ background: 'rgba(16,185,129,0.1)', borderLeft: '4px solid #10b981', padding: '1rem 1.25rem', marginBottom: '1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <FiAlertCircle color="#10b981" size={20} />
-          <div>
-            <strong style={{ color: '#10b981' }}>Grace Period Active</strong>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Your grace period for task submission expires: <strong>{completionGraceDeadline?.toLocaleString()}</strong>. Update & save your goals before then!
+
+          <div className="dashboard-sidebar-footer">
+            <div className="dashboard-user-chip">
+              <div className="dashboard-user-chip-left">
+                {userData?.profilePicUrl ? (
+                  <img src={userData.profilePicUrl} alt={userData?.name || 'User'} />
+                ) : (
+                  <div className="dashboard-user-fallback">
+                    {userData?.name?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                )}
+                <span className="dashboard-user-chip-name">{userData?.name || 'Member'}</span>
+              </div>
+              <LuChevronDown size={14} className="dashboard-user-chip-icon" />
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Warning Banners */}
-      {userData?.status === 'Warning' && (
-        <div style={{ background: 'rgba(245, 158, 11, 0.1)', borderLeft: '4px solid var(--warning)', padding: '1rem', marginBottom: '2rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <FiAlertCircle color="var(--warning)" size={24} />
-          <span><strong>Warning:</strong> You scored less than 5 points last week. Please improve this week to avoid suspension and a ₦1,000 penalty.</span>
-        </div>
-      )}
-
-      {isLockedOut && (
-        <div style={{ background: 'rgba(239, 68, 68, 0.1)', borderLeft: '4px solid var(--danger)', padding: '1rem', marginBottom: '2rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <FiAlertCircle color="var(--danger)" size={24} />
-          <div>
-            <strong>Account Locked!</strong> Your wallet balance (₦{userData?.walletBalance}) is below the required ₦1,000 minimum.
-            <br />You cannot set goals or check in until your wallet is funded. Contact the Admin.
+            {/* Sign Out Button in Left Column */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="dashboard-signout-btn"
+              title="Sign Out"
+            >
+              <LuLogOut size={16} />
+              <span>Sign Out</span>
+            </button>
           </div>
-        </div>
-      )}
-
-      {/* ── On Break Banner ── */}
-      {userData?.status === 'On Break' && (
-        <div style={{ background: 'rgba(16, 185, 129, 0.1)', borderLeft: '4px solid #10b981', padding: '1.25rem', marginBottom: '2rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ fontSize: '2rem' }}>🏖️</div>
-          <div>
-            <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>Enjoy your 1-week break!</strong>
-            <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              You are exempt from all accountability and penalties for this week. Your account will automatically return to **Active** status next Monday.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ── On Hold Banner ── */}
-      {userData?.status === 'On Hold' && (
-        <div style={{ background: 'rgba(245, 158, 11, 0.1)', borderLeft: '4px solid var(--warning)', padding: '1.25rem', marginBottom: '2rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ fontSize: '2rem' }}>⏸️</div>
-          <div style={{ flex: 1 }}>
-            <strong style={{ fontSize: '1.1rem', color: 'var(--warning)' }}>Account on Emergency Hold</strong>
-            <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              Your account is currently inactive due to an emergency. No penalties will apply while on hold.
-            </p>
-          </div>
-          <button onClick={handleRequestRelease} disabled={releasingHold} className="btn btn-primary" style={{ background: 'var(--warning)', border: 'none', color: 'black', fontWeight: 'bold' }}>
-            {releasingHold ? 'Releasing...' : 'Request Release'}
-          </button>
-        </div>
-      )}
-      <section className="member-weekly-brief">
-        <div>
-          <span className="member-eyebrow">TEC WEEKLY / MEMBER SPACE</span>
-          <h1>Welcome back, {memberFirstName}.</h1>
-          <p>{goalsSubmitted ? 'Turn the commitments you made into proof this week.' : 'Start with a clear commitment for the week ahead.'}</p>
-        </div>
-        <div className="member-week-stamp">
-          <span>Active week</span>
-          <strong>{currentWeekId || 'Loading'}</strong>
-          <em>{memberStatus}</em>
-        </div>
-      </section>
-
-      <section className="member-execution-board" aria-label="Weekly execution summary">
-        <div className="member-commitment">
-          <span className="member-eyebrow">YOUR COMMITMENT</span>
-          <h2>{goalsSubmitted ? `${completedTasks} of ${plannedTasks} goals marked complete` : 'Set the work that matters this week.'}</h2>
-          <p>{goalsSubmitted ? 'Update each goal with progress and proof before the review window closes.' : 'Choose a small, concrete set of goals. Your commitments create the week’s scoreboard.'}</p>
-          <div className="member-progress-track" aria-label={`${weeklyProgress}% of goals marked complete`}>
-            <span style={{ width: `${weeklyProgress}%` }} />
-          </div>
-          <div className="member-progress-caption">
-            <span>{weeklyProgress}% marked complete</span>
-            <span>{weeklyPoints || 0} points this week</span>
-          </div>
-          <button onClick={() => setActiveTab('goals')} className="member-primary-action">
-            {goalsSubmitted ? 'Update goals' : 'Set weekly goals'} <span aria-hidden="true">→</span>
-          </button>
-        </div>
-        <aside className="member-checkpoint">
-          <span className="member-checkpoint-label">NEXT CHECKPOINT</span>
-          <strong>{nextCheckpointLabel}</strong>
-          <time>{nextCheckpointValue}</time>
-          <span className={isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'member-checkpoint-state overdue' : 'member-checkpoint-state'}>
-            {isPastCompletion || (isPastSetup && !goalsSubmitted) ? 'Deadline passed' : 'Keep the week moving'}
-          </span>
         </aside>
-      </section>
 
-      <section className="member-metrics" aria-label="Your member metrics">
-        <div className="member-metric">
-          <span>Wallet</span>
-          <strong>₦{(userData?.walletBalance || 0).toLocaleString()}</strong>
-          <small>Private balance</small>
-        </div>
-        <div className="member-metric">
-          <span>Lifetime points</span>
-          <strong>{(userData?.totalPoints || 0).toLocaleString()}</strong>
-          <small>Earned through execution</small>
-        </div>
-        <div className="member-metric">
-          <span>Daily rhythm</span>
-          <strong>{streakData.currentStreak || 0} <small>days</small></strong>
-          <small>{streakData.checkedInToday ? 'Checked in today' : 'Check in to extend it'}</small>
-        </div>
-        <div className="member-metric">
-          <span>Recognition</span>
-          <strong>{userData?.achievementStars || 0} <small>stars</small></strong>
-          <small>{userData?.consecutiveGoodWeeks || 0}/4 strong weeks</small>
-        </div>
-      </section>
+        {/* 2. MAIN AREA */}
+        <main className="dashboard-main">
+          {/* ── Setup Deadline Banners ── */}
+          {isPastSetup && !goalsSubmitted && !setupGraceActive && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', borderLeft: '4px solid var(--danger)', padding: '1rem 1.25rem', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FiAlertCircle color="var(--danger)" size={20} />
+                  <div>
+                    <strong>Goal Setting Deadline Missed</strong>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Deadline was {setupDeadline?.toLocaleString()}. Your goal form is locked.
+                    </div>
+                  </div>
+                </div>
+                {setupGrace?.status === 'pending' ? (
+                  <span style={{ padding: '0.3rem 0.75rem', background: 'rgba(245,158,11,0.2)', color: 'var(--warning)', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700' }}>
+                    ⏳ Grace Request Pending Admin Approval
+                  </span>
+                ) : (
+                  <button onClick={() => setShowGraceModal('setup')} className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                    Request Grace Period
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {isPastSetup && setupGraceActive && (
+            <div style={{ background: 'rgba(16,185,129,0.1)', borderLeft: '4px solid #10b981', padding: '1rem 1.25rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <FiAlertCircle color="#10b981" size={20} />
+              <div>
+                <strong style={{ color: '#10b981' }}>Grace Period Active</strong>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Your grace period for goal setting expires: <strong>{setupGraceDeadline?.toLocaleString()}</strong>. Set your goals before then!
+                </div>
+              </div>
+            </div>
+          )}
 
-      <nav className="member-section-nav" aria-label="Member dashboard sections">
-        <button onClick={() => setActiveTab('goals')} className={activeTab === 'goals' ? 'active' : ''}>Weekly goals</button>
-        <button onClick={() => setActiveTab('vision')} className={activeTab === 'vision' ? 'active' : ''}>Monthly vision</button>
-        <button onClick={() => setActiveTab('streak')} className={activeTab === 'streak' ? 'active' : ''}>Daily rhythm</button>
-        <button onClick={() => setActiveTab('attendance')} className={activeTab === 'attendance' ? 'active' : ''}>Attendance</button>
-        <button onClick={() => setActiveTab('partner')} className={activeTab === 'partner' ? 'active' : ''}>Partner</button>
-        <button onClick={() => setActiveTab('profile')} className={activeTab === 'profile' ? 'active' : ''}>Profile</button>
-        <Link to="/livefeed" className="member-live-link">Community feed <span aria-hidden="true">→</span></Link>
-      </nav>
+          {/* ── Completion Deadline Banners ── */}
+          {isPastCompletion && !completionGraceActive && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', borderLeft: '4px solid var(--danger)', padding: '1rem 1.25rem', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FiAlertCircle color="var(--danger)" size={20} />
+                  <div>
+                    <strong>Task Submission Deadline Missed</strong>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Deadline was {completionDeadline?.toLocaleString()}. Goals are locked for review.
+                    </div>
+                  </div>
+                </div>
+                {completionGrace?.status === 'pending' ? (
+                  <span style={{ padding: '0.3rem 0.75rem', background: 'rgba(245,158,11,0.2)', color: 'var(--warning)', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700' }}>
+                    ⏳ Grace Request Pending Admin Approval
+                  </span>
+                ) : goalsSubmitted ? (
+                  <button onClick={() => setShowGraceModal('completion')} className="btn btn-danger" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                    Request Grace Period
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )}
+          {isPastCompletion && completionGraceActive && (
+            <div style={{ background: 'rgba(16,185,129,0.1)', borderLeft: '4px solid #10b981', padding: '1rem 1.25rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <FiAlertCircle color="#10b981" size={20} />
+              <div>
+                <strong style={{ color: '#10b981' }}>Grace Period Active</strong>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Your grace period for task submission expires: <strong>{completionGraceDeadline?.toLocaleString()}</strong>. Update & save your goals before then!
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Warning Banners */}
+          {userData?.status === 'Warning' && (
+            <div style={{ background: 'rgba(245, 158, 11, 0.1)', borderLeft: '4px solid var(--warning)', padding: '1rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <FiAlertCircle color="var(--warning)" size={24} />
+              <span><strong>Warning:</strong> You scored less than 5 points last week. Please improve this week to avoid suspension and a ₦1,000 penalty.</span>
+            </div>
+          )}
+
+          {isLockedOut && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.1)', borderLeft: '4px solid var(--danger)', padding: '1rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <FiAlertCircle color="var(--danger)" size={24} />
+              <div>
+                <strong>Account Locked!</strong> Your wallet balance (₦{userData?.walletBalance}) is below the required ₦1,000 minimum.
+                <br />You cannot set goals or check in until your wallet is funded. Contact the Admin.
+              </div>
+            </div>
+          )}
+
+          {/* ── On Break Banner ── */}
+          {userData?.status === 'On Break' && (
+            <div style={{ background: 'rgba(16, 185, 129, 0.1)', borderLeft: '4px solid #10b981', padding: '1.25rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ fontSize: '2rem' }}>🏖️</div>
+              <div>
+                <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>Enjoy your 1-week break!</strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                  You are exempt from all accountability and penalties for this week. Your account will automatically return to **Active** status next Monday.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── On Hold Banner ── */}
+          {userData?.status === 'On Hold' && (
+            <div style={{ background: 'rgba(245, 158, 11, 0.1)', borderLeft: '4px solid var(--warning)', padding: '1.25rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ fontSize: '2rem' }}>⏸️</div>
+              <div style={{ flex: 1 }}>
+                <strong style={{ fontSize: '1.1rem', color: 'var(--warning)' }}>Account on Emergency Hold</strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                  Your account is currently inactive due to an emergency. No penalties will apply while on hold.
+                </p>
+              </div>
+              <button onClick={handleRequestRelease} disabled={releasingHold} className="btn btn-primary" style={{ background: 'var(--warning)', border: 'none', color: 'black', fontWeight: 'bold' }}>
+                {releasingHold ? 'Releasing...' : 'Request Release'}
+              </button>
+            </div>
+          )}
+
+          {/* Header */}
+          <div className="dash-header-minimal">
+            <h1>Welcome back, {memberFirstName}.</h1>
+            <p>Your weekly accountability dashboard</p>
+          </div>
+
+          {/* Metrics Row (4 Tiles) */}
+          <section className="dash-metrics-grid" aria-label="Member metrics">
+            <div className="dash-metric-card">
+              <div className="dash-metric-chip">
+                <LuWallet />
+              </div>
+              <div className="dash-metric-info">
+                <span className="dash-metric-title">Wallet</span>
+                <span className="dash-metric-number">₦{(userData?.walletBalance || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="dash-metric-card">
+              <div className="dash-metric-chip">
+                <LuTrophy />
+              </div>
+              <div className="dash-metric-info">
+                <span className="dash-metric-title">Lifetime Points</span>
+                <span className="dash-metric-number">{(userData?.totalPoints || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="dash-metric-card">
+              <div className="dash-metric-chip">
+                <LuClock />
+              </div>
+              <div className="dash-metric-info">
+                <span className="dash-metric-title">Daily Check-In</span>
+                <span className="dash-metric-number">{streakData.currentStreak || 0}</span>
+              </div>
+            </div>
+
+            <div className="dash-metric-card">
+              <div className="dash-metric-chip">
+                <LuStar />
+              </div>
+              <div className="dash-metric-info">
+                <span className="dash-metric-title">Recognition</span>
+                <span className="dash-metric-number">{userData?.achievementStars || 0}</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Tab Content Panels Container */}
+          <div className="dash-content-panel">
 
       {/* ── Daily Streak Tab ── */}
       {activeTab === 'streak' && (() => {
@@ -1124,18 +1328,18 @@ export default function Dashboard({ user, userData }) {
             </div>
 
             {/* Stats Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
-              <div style={{ textAlign: 'center', padding: '1.25rem', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '12px' }}>
-                <div style={{ fontSize: '2rem', fontWeight: '900', color: '#f97316' }}>{Math.min(streakDisplay, 7)}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Current Day</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '12px' }}>
+                <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#f97316' }}>{Math.min(streakDisplay, 7)}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Current Day</div>
               </div>
-              <div style={{ textAlign: 'center', padding: '1.25rem', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '12px' }}>
-                <div style={{ fontSize: '2rem', fontWeight: '900', color: '#eab308' }}>{7 - Math.min(streakDisplay, 7)}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Days Remaining</div>
+              <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '12px' }}>
+                <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#eab308' }}>{7 - Math.min(streakDisplay, 7)}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Days Left</div>
               </div>
-              <div style={{ textAlign: 'center', padding: '1.25rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '12px' }}>
-                <div style={{ fontSize: '2rem', fontWeight: '900', color: 'var(--primary)' }}>{streakData.totalCycles * 2}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Total Pts Earned</div>
+              <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '12px' }}>
+                <div style={{ fontSize: '1.75rem', fontWeight: '900', color: 'var(--primary)' }}>{streakData.totalCycles * 2}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Pts Earned</div>
               </div>
             </div>
 
@@ -1145,7 +1349,7 @@ export default function Dashboard({ user, userData }) {
                 <span>Streak Progress</span>
                 <span style={{ color: progressPercent === 100 ? '#10b981' : '#f97316' }}>{Math.round(progressPercent)}% — {Math.min(streakDisplay, 7)}/7 days</span>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', overflowX: 'auto', paddingBottom: '0.5rem', WebkitOverflowScrolling: 'touch' }}>
                 {daysArr.map(day => {
                   const filled = day <= Math.min(streakDisplay, 7);
                   const isToday = day === Math.min(streakDisplay, 7) && streakData.checkedInToday;
@@ -1422,6 +1626,32 @@ export default function Dashboard({ user, userData }) {
               <input type="tel" className="input-field" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="08012345678 or +2348012345678" required />
             </div>
 
+            <div style={{ marginTop: '0.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', padding: '0.85rem 1.15rem', background: 'rgba(37, 211, 102, 0.08)', border: '1px solid rgba(37, 211, 102, 0.25)', borderRadius: '12px' }}>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', maxWidth: '520px' }}>
+                💡 <strong>Activate 24-Hour Messaging Window:</strong> Tap the button to message the bot (+234 902 667 5879) with your registered email. This pairs your phone number and unlocks automatic goal notifications and reminders.
+              </div>
+              <a
+                href={`https://wa.me/2349026675879?text=${encodeURIComponent(`Hi TEC, my registered email is ${userData?.email || user?.email || ''}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '10px',
+                  background: '#25D366',
+                  color: '#ffffff',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <span>💬 Message Bot on WhatsApp</span>
+              </a>
+            </div>
+
             <h3 style={{ margin: '1.5rem 0 1rem', fontWeight: '700', fontSize: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>Social Media Handles <span style={{ fontSize: '0.75rem', fontWeight: '400', color: 'var(--text-secondary)' }}>(shown when someone views your profile)</span></h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
               {[{ key: 'twitter', label: '𝕏 Twitter / X', placeholder: '@handle' }, { key: 'instagram', label: '📸 Instagram', placeholder: '@handle' }, { key: 'linkedin', label: '💼 LinkedIn', placeholder: 'linkedin.com/in/yourname' }, { key: 'github', label: '🐙 GitHub', placeholder: 'github.com/username' }].map(s => (
@@ -1523,7 +1753,7 @@ export default function Dashboard({ user, userData }) {
       )}
 
       {activeTab === 'goals' && (
-        (Boolean(weekSettings?.peerGoalsEnabled)) ? (
+        (Boolean(isPeerGoalsActive)) ? (
           goalsSubmitted && weeklyGoalsDoc?.tasks?.length > 0 ? (
             <ActiveGoalsKanban
               user={user}
@@ -1552,127 +1782,109 @@ export default function Dashboard({ user, userData }) {
             </div>
           )
         ) : (
-        <div className="glass-panel printable" style={{ padding: '2rem', opacity: isLockedOut ? 0.5 : 1, pointerEvents: isLockedOut ? 'none' : 'auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-            <div>
-              <h1 className="printable-title">TEC Weekly Goals Report</h1>
-              <h2>Set & Report Weekly Goals</h2>
-              <div className="print-only" style={{ marginTop: '0.5rem' }}>
-                <strong>User:</strong> {userData?.name} | <strong>Week:</strong> {currentWeekId} | <strong>Points:</strong> {weeklyPoints}
-              </div>
-            </div>
-            <button onClick={handleDownloadPDF} className="btn btn-secondary no-print" style={{ borderRadius: '12px' }}>
-              <FiDownload /> Download Report (PDF)
-            </button>
-          </div>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            {goalsSubmitted
-              ? 'Goals are set. Update your status & proof, then save. Admin will award points after review.'
-              : 'Set your goals for the week (Minimum 3, Maximum 10). Once submitted, descriptions are locked.'}
-          </p>
+        <div className="dash-goals-panel printable" style={{ opacity: isLockedOut ? 0.5 : 1, pointerEvents: isLockedOut ? 'none' : 'auto' }}>
+          <div className="dash-goals-list">
+            {tasks.map((task, idx) => {
+              const isLocked = task.reviewed === true || isPastCompletion || (isPastSetup && !goalsSubmitted);
+              return (
+                <div key={task.id} style={{ marginBottom: '0.75rem' }}>
+                  <div className="dash-goal-row" style={{ opacity: isLocked ? 0.65 : 1 }}>
+                    {(goalsSubmitted && !task.isNew) ? (
+                      <div className="dash-goal-input" style={{ display: 'flex', alignItems: 'center' }}>
+                        {task.description || '—'}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        className="dash-goal-input"
+                        value={task.description}
+                        onChange={(e) => updateTask(idx, 'description', e.target.value)}
+                        placeholder="What will you accomplish?"
+                        disabled={isLocked}
+                      />
+                    )}
 
-          {goalsSubmitted && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', padding: '0.6rem 1rem', background: 'rgba(99,102,241,0.1)', borderLeft: '3px solid var(--primary)', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              🔒 Goal descriptions are locked. You can only update <strong style={{ color: 'var(--text)', margin: '0 2px' }}>Status</strong> and <strong style={{ color: 'var(--text)', margin: '0 2px' }}>Proof</strong> until they are completed.
-            </div>
-          )}
+                    <div className="dash-goal-controls">
+                      <select
+                        className="dash-status-select"
+                        value={task.status}
+                        onChange={(e) => updateTask(idx, 'status', e.target.value)}
+                        disabled={isLocked}
+                      >
+                        <option value="">Status ▾</option>
+                        <option value="Completed">Completed</option>
+                        <option value="Partially">Partially</option>
+                        <option value="Not Completed">Not Completed</option>
+                      </select>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ padding: '1rem' }}>Task Description</th>
-                  <th style={{ padding: '1rem' }}>Status</th>
-                  <th style={{ padding: '1rem' }}>Evidence / Proof</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task, idx) => {
-                  const isLocked = task.reviewed === true || isPastCompletion || (isPastSetup && !goalsSubmitted);
-                  return (
-                    <tr key={task.id} style={{ borderBottom: '1px solid var(--border)', opacity: isLocked ? 0.6 : 1 }}>
-                      <td style={{ padding: '1rem' }}>
-                        <div style={{ marginBottom: '0.4rem', fontSize: '0.75rem', fontWeight: 'bold', color: idx < 3 ? 'var(--primary)' : 'var(--text-secondary)' }}>
-                          {idx < 3 ? 'Compulsory (±1 pt)' : 'Optional (0 pts)'}
-                        </div>
-                        {(goalsSubmitted && !task.isNew) ? (
-                          <div style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.04)', borderRadius: '6px', fontSize: '0.9rem', color: 'var(--text)', border: '1px solid var(--border)', minHeight: '48px' }}>
-                            {task.description || '—'}
-                          </div>
-                        ) : (
-                          <textarea className="input-field" rows="2" value={task.description} onChange={(e) => updateTask(idx, 'description', e.target.value)} placeholder="What will you accomplish?"></textarea>
-                        )}
-                      </td>
-                      <td style={{ padding: '1rem', width: '200px' }}>
-                        <select
-                          className="input-field"
-                          value={task.status}
-                          onChange={(e) => updateTask(idx, 'status', e.target.value)}
-                          disabled={isLocked}
+                      <div className="dash-evidence-wrap">
+                        <label
+                          className="dash-evidence-btn"
+                          style={{ cursor: (task.uploadingProof || isLocked) ? 'not-allowed' : 'pointer', flex: 1 }}
+                          title={task.proofText || task.proofImage || "Upload proof image"}
                         >
-                          <option value="">Pending</option>
-                          <option value="Completed">Completed</option>
-                          <option value="Partially">Partially</option>
-                          <option value="Not Completed">Not Completed</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <input
-                          type="text"
-                          className="input-field"
-                          style={{ marginBottom: '0.5rem', border: task.adminAction === 'rejected' ? '1px solid var(--warning)' : '' }}
-                          value={task.proofText}
-                          onChange={(e) => updateTask(idx, 'proofText', e.target.value)}
-                          placeholder="Link to evidence (optional)"
-                          disabled={isLocked}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <label
-                            className="btn btn-secondary"
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', cursor: (task.uploadingProof || isLocked) ? 'not-allowed' : 'pointer', opacity: isLocked ? 0.5 : 1 }}
+                          <LuFileText size={15} />
+                          <span>{task.uploadingProof ? `${task.uploadProgress || 0}%` : task.proofImage ? 'Image ✓' : task.proofText ? 'Link ✓' : 'Evidence'}</span>
+                          {!isLocked && <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleProofImageUpload(idx, e)} disabled={task.uploadingProof} />}
+                        </label>
+                        {!isLocked && (
+                          <button
+                            type="button"
+                            className="dash-evidence-btn dash-evidence-link-btn"
+                            title="Paste proof link URL"
+                            onClick={() => {
+                              const link = prompt('Enter evidence URL link:', task.proofText || '');
+                              if (link !== null) updateTask(idx, 'proofText', link);
+                            }}
                           >
-                            <FiCamera /> {task.uploadingProof ? `Uploading ${task.uploadProgress || 0}%` : 'Upload Image'}
-                            {!isLocked && <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleProofImageUpload(idx, e)} disabled={task.uploadingProof} />}
-                          </label>
-                          {task.proofImage && <span style={{ color: 'var(--secondary)', fontSize: '0.8rem' }}>✓ Image attached</span>}
-                          {task.proofText && (
-                            <a 
-                              href={task.proofText.startsWith('http') ? task.proofText : `https://${task.proofText}`} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              style={{ color: 'var(--primary)', fontSize: '0.8rem', textDecoration: 'underline' }}
-                            >
-                              View Link
-                            </a>
-                          )}
-                        </div>
-                        {task.adminAction === 'rejected' && (
-                          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--warning)', background: 'rgba(245, 158, 11, 0.1)', padding: '0.4rem', borderRadius: '4px' }}>
-                            <strong>Rejected:</strong> {task.rejectionReason}
-                          </div>
+                            🔗
+                          </button>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Evidence & feedback badge */}
+                  {(task.proofText || task.proofImage || task.adminAction === 'rejected') && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingLeft: '0.5rem', marginBottom: '0.4rem', fontSize: '0.75rem' }}>
+                      {task.proofImage && (
+                        <a href={task.proofImage} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>
+                          📷 Attached Image
+                        </a>
+                      )}
+                      {task.proofText && (
+                        <a href={task.proofText.startsWith('http') ? task.proofText : `https://${task.proofText}`} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>
+                          🔗 {task.proofText}
+                        </a>
+                      )}
+                      {task.adminAction === 'rejected' && (
+                        <span style={{ color: 'var(--warning)' }}>
+                          ⚠️ Rejected: {task.rejectionReason}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {(tasks.length < 10 && !isPastSetup && !isPastCompletion) && (
-              <button onClick={addTaskRow} className="btn btn-secondary">Add Another Goal</button>
-            )}
+          <div className="dash-goals-actions">
+            {(tasks.length < 10 && !isPastSetup && !isPastCompletion) ? (
+              <button onClick={addTaskRow} type="button" className="dash-add-goal-btn">
+                <LuPlus size={14} /> Add Another Goal
+              </button>
+            ) : <div />}
+
             <button
               onClick={handleSaveGoals}
-              className="btn btn-primary"
+              type="button"
+              className="dash-submit-goals-btn"
               disabled={submittingGoals || isPastCompletion || (isPastSetup && !goalsSubmitted)}
-              style={{ marginLeft: (goalsSubmitted || isPastSetup) ? 'auto' : '0' }}
             >
               {submittingGoals ? 'Saving...' : goalsSubmitted ? 'Update Progress' : 'Submit Weekly Goals'}
             </button>
           </div>
-
         </div>
         )
       )}
@@ -1856,6 +2068,9 @@ export default function Dashboard({ user, userData }) {
           )}
         </div>
       )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

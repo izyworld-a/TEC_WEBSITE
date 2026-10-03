@@ -205,40 +205,62 @@ async function sendMetaTemplate(
   components: any[] = [],
   languageCode = "en_US",
 ): Promise<{ ok: boolean; err?: string; code?: number }> {
-  try {
-    const res = await fetch(
-      `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("META_ACCESS_TOKEN") ?? ""}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to,
-          type: "template",
-          template: {
-            name: templateName,
-            language: { code: languageCode },
-            components,
-          },
-        }),
-      },
-    );
-    const data: any = await res.json();
-    if (data?.messages?.[0]?.id) return { ok: true };
-    const code: number | undefined = data?.error?.code;
-    return {
-      ok: false,
-      code,
-      err: code
-        ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
-        : JSON.stringify(data).slice(0, 90),
-    };
-  } catch (e: any) {
-    return { ok: false, err: e?.message ?? "network error" };
+  const token = Deno.env.get("META_ACCESS_TOKEN") ?? "";
+  const nameCandidates = [templateName];
+  if (templateName.endsWith("_")) {
+    nameCandidates.push(templateName.slice(0, -1));
+  } else {
+    nameCandidates.push(`${templateName}_`);
   }
+  const langCandidates = languageCode === "en_US" ? ["en_US", "en"] : [languageCode, "en", "en_US"];
+  const uniqueNames = Array.from(new Set(nameCandidates));
+  const uniqueLangs = Array.from(new Set(langCandidates));
+
+  let lastResult: { ok: boolean; err?: string; code?: number } = { ok: false, err: "No attempts made" };
+
+  for (const name of uniqueNames) {
+    for (const lang of uniqueLangs) {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              to,
+              type: "template",
+              template: {
+                name,
+                language: { code: lang },
+                components,
+              },
+            }),
+          },
+        );
+        const data: any = await res.json();
+        if (data?.messages?.[0]?.id) return { ok: true };
+        const code: number | undefined = data?.error?.code;
+        lastResult = {
+          ok: false,
+          code,
+          err: code
+            ? `${code}: ${(data?.error?.error_data?.details || data?.error?.message || "").slice(0, 90)}`
+            : JSON.stringify(data).slice(0, 90),
+        };
+        // If error is not related to template name or language mismatch, return result immediately
+        if (code !== 132001 && code !== 132000 && code !== 100) {
+          return lastResult;
+        }
+      } catch (e: any) {
+        lastResult = { ok: false, err: e?.message ?? "network error" };
+      }
+    }
+  }
+  return lastResult;
 }
 
 function is24HourWindowError(code?: number, err?: string): boolean {
@@ -355,7 +377,16 @@ async function runReminders(dry: boolean, forceTemplate = false) {
 
     let msg = "";
     if (!goal) {
-      msg = `\u2600\uFE0F Good morning ${first}! Week ${weekId} is live on TEC and your goals are not set yet.\n\nHead to the portal and lock in your weekly goals now${setupDeadline ? ` \u2014 setup deadline ${setupDeadline}` : ""}.\n\nExecution beats intention. \u{1F525}`;
+      msg = [
+        `🌅 Good morning ${first}!`,
+        "━━━━━━━━━━━━━━━━━━━━━",
+        `Week ${weekId} is active and your goals are not set yet.`,
+        setupDeadline ? `Deadline: ${setupDeadline}` : null,
+        "",
+        "👉 Set your goals on the portal: https://tec-weekly-goals.web.app/dashboard",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        "Execution beats intention. 🔥",
+      ].filter(Boolean).join("\n");
     } else {
       const tasks: { desc: string; done: boolean }[] = [];
       const arr = goal.tasks?.arrayValue?.values ?? [];
@@ -363,18 +394,32 @@ async function runReminders(dry: boolean, forceTemplate = false) {
         const tf = t?.mapValue?.fields ?? {};
         tasks.push({ desc: sval(tf.description), done: sval(tf.status) === "Completed" });
       }
-      const taskLines = tasks.map((t) => `${t.done ? "\u2705" : "\u2022"} ${t.desc}`).join("\n");
+      const taskLines = tasks.map((t, idx) => `${idx + 1}. ${t.done ? "✅" : "⏳"} ${t.desc}`).join("\n");
       if (progress >= 100) {
-        msg = `\u{1F3C6} ${first}, 100% on your Week ${weekId} goals \u2014 elite execution!\n${taskLines}\n\nYour consistency is compounding. Respect.`;
+        msg = [
+          `🏆 *Week ${weekId} Complete • ${first}*`,
+          "━━━━━━━━━━━━━━━━━━━━━",
+          taskLines,
+          "━━━━━━━━━━━━━━━━━━━━━",
+          "100% execution! Consistency compounds. 👏",
+        ].join("\n");
       } else {
-        msg = `\u{1F525} ${first}, Week ${weekId} check-in:\n\n${taskLines || "Your goal tasks"}\n\nYou are at ${progress}%${completionDeadline ? ` \u2014 completion deadline ${completionDeadline}` : ""}. Reply here with an update or photo proof. No excuses, execute. \u{1F4AA}`;
+        msg = [
+          `⚡ *Week ${weekId} Check-in • ${first}*`,
+          `Progress: ${progress}%`,
+          "━━━━━━━━━━━━━━━━━━━━━",
+          taskLines || "No tasks logged.",
+          "━━━━━━━━━━━━━━━━━━━━━",
+          completionDeadline ? `Deadline: ${completionDeadline}\n` : null,
+          "Reply with an update or photo proof. No excuses, execute! 💪",
+        ].filter(Boolean).join("\n");
       }
     }
 
     const lastCheckin = streak ? sval(streak.lastCheckin) : "";
     const streakLen = streak ? parseInt(sval(streak.currentStreak) || "0", 10) : 0;
     if (lastCheckin !== today) {
-      msg += `\n\nDon't forget today's check-in \u2014 protect that ${streakLen > 0 ? `${streakLen}-day ` : ""}streak \u{1F525}`;
+      msg += `\n🔥 ${streakLen > 0 ? `${streakLen}-day streak` : "Daily check-in"} active — protect your momentum!`;
     }
 
     const templateComponents = buildReminderComponents(

@@ -66,7 +66,9 @@
 
 /* Base Admin Shell */
 .admin-shell {
-  min-height: 100vh;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
   background-color: var(--admin-bg-base);
   color: var(--admin-text-main);
   display: flex;
@@ -78,13 +80,14 @@
 
 /* ── TOPBAR ─────────────────────────────────────────────────────────────── */
 .admin-topbar {
-  height: 64px;
+  height: calc(64px + env(safe-area-inset-top, 0px));
+  flex-shrink: 0;
   background-color: var(--admin-bg-topbar);
   border-bottom: 1px solid var(--admin-border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.5rem;
+  padding: env(safe-area-inset-top, 0px) max(1.5rem, env(safe-area-inset-right, 0px)) 0 max(1.5rem, env(safe-area-inset-left, 0px));
   position: sticky;
   top: 0;
   z-index: 40;
@@ -205,10 +208,39 @@
   border-color: #ef4444;
 }
 
+.admin-signout-sidebar-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 9px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.admin-signout-sidebar-btn:hover {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: #ef4444;
+}
+
+.admin-signout-sidebar-btn svg {
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
 /* ── BODY LAYOUT ────────────────────────────────────────────────────────── */
 .admin-layout {
   display: flex;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
   position: relative;
 }
 
@@ -222,11 +254,25 @@
   justify-content: space-between;
   padding: 1.25rem 0.85rem;
   flex-shrink: 0;
-  height: calc(100vh - 64px);
-  position: sticky;
-  top: 64px;
+  height: 100%;
   overflow-y: auto;
+  box-sizing: border-box;
   transition: background-color 0.25s ease, border-color 0.25s ease;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.admin-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.admin-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
 }
 
 .admin-sidebar-header {
@@ -365,6 +411,30 @@
   max-width: 1600px;
   margin: 0 auto;
   width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* Member Switch Button in Topbar */
+.admin-member-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.38rem 0.8rem;
+  font-size: 0.78rem;
+  text-decoration: none;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--tec-brand-violet);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.admin-member-switch-btn:hover {
+  background: rgba(99, 102, 241, 0.22);
 }
 
 /* ── 5 TOP STAT CARDS (Clean, Non-Neon) ─────────────────────────────────── */
@@ -854,7 +924,7 @@
 
   .admin-sidebar {
     position: fixed;
-    top: 64px;
+    top: calc(64px + env(safe-area-inset-top, 0px));
     left: 0;
     bottom: 0;
     z-index: 50;
@@ -870,13 +940,19 @@
   .admin-sidebar-backdrop {
     position: fixed;
     inset: 0;
-    top: 64px;
+    top: calc(64px + env(safe-area-inset-top, 0px));
     background: rgba(0, 0, 0, 0.5);
     z-index: 45;
   }
 
   .admin-stats-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-member-switch-btn {
+    display: none !important;
   }
 }
 
@@ -891,6 +967,10 @@
 
   .admin-role-pill.subtle {
     display: none;
+  }
+
+  .admin-member-switch-btn {
+    display: none !important;
   }
 
   .admin-main {

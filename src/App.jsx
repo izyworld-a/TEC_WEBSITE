@@ -89,11 +89,11 @@ function App() {
       return <Navigate to="/dashboard" />;
     }
 
-    if (requireModerator && !userData?.isAdmin && !userData?.isModerator) {
+    if (requireModerator && !userData?.isModerator) {
       return <Navigate to="/dashboard" />;
     }
 
-    if (!requireAdmin && !requireModerator && userData?.status === 'Pending') {
+    if (!requireAdmin && !requireModerator && !userData?.isAdmin && userData?.status === 'Pending') {
       return <Navigate to="/pending" />;
     }
 
@@ -111,11 +111,24 @@ function AppContent({ user, userData, ProtectedRoute }) {
   const { pathname } = useLocation();
   const isHome = pathname === '/';
   const isAdminRoute = pathname.startsWith('/admin');
+  const isDashboardRoute = pathname === '/dashboard';
+  const [dashboardSidebarOpen, setDashboardSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setDashboardSidebarOpen(false);
+  }, [pathname]);
 
   return (
-    <div className={isAdminRoute ? "admin-app-container" : "app-container"}>
-      {!isAdminRoute && <Navbar user={user} userData={userData} />}
-      <main className={isHome ? "main-content-home" : (isAdminRoute ? "main-content-admin" : "main-content")}>
+    <div className={isAdminRoute ? "admin-app-container" : (isDashboardRoute ? "dashboard-app-container" : "app-container")}>
+      {!isAdminRoute && (
+        <Navbar
+          user={user}
+          userData={userData}
+          isDashboardSidebarOpen={dashboardSidebarOpen}
+          onToggleDashboardSidebar={() => setDashboardSidebarOpen(prev => !prev)}
+        />
+      )}
+      <main className={isHome ? "main-content-home" : (isAdminRoute ? "main-content-admin" : (isDashboardRoute ? "main-content-dashboard" : "main-content"))}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
@@ -126,7 +139,12 @@ function AppContent({ user, userData, ProtectedRoute }) {
 
           <Route path="/dashboard" element={
             <ProtectedRoute>
-              <Dashboard user={user} userData={userData} />
+              <Dashboard
+                user={user}
+                userData={userData}
+                isMobileSidebarOpen={dashboardSidebarOpen}
+                setIsMobileSidebarOpen={setDashboardSidebarOpen}
+              />
             </ProtectedRoute>
           } />
 
@@ -155,7 +173,7 @@ function AppContent({ user, userData, ProtectedRoute }) {
           } />
         </Routes>
       </main>
-      {!isHome && !isAdminRoute && (
+      {!isHome && !isAdminRoute && !isDashboardRoute && (
         <footer style={{ 
           textAlign: 'center', 
           padding: '2rem', 

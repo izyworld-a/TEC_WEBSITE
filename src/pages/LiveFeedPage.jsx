@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, orderBy, limit, onSnapshot, where, doc } from 'firebase/firestore';
-import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser, FiDollarSign } from 'react-icons/fi';
+import { collection, query, orderBy, limit, onSnapshot, where, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser, FiDollarSign, FiTrash2, FiGift } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 import { CircleStatusChip, LiveMetricCard, WeekIdentityChip } from '../components/ProductUI';
+import BirthdayModal from '../components/BirthdayModal';
 
 export default function LiveFeedPage({ user, userData }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -13,6 +14,8 @@ export default function LiveFeedPage({ user, userData }) {
   const [topPerformer, setTopPerformer] = useState(null);
   const [usersMap, setUsersMap] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
+  const [birthdayData, setBirthdayData] = useState(null);
+  const [showBirthdayModal, setShowBirthdayModal] = useState(false);
   
   const [pairings, setPairings] = useState([]);
   const [myPairing, setMyPairing] = useState(null);
@@ -47,18 +50,43 @@ export default function LiveFeedPage({ user, userData }) {
   // Listen to weekly goals and settings for the selected week
   useEffect(() => {
     const goalsRef = collection(db, 'weekly_goals');
-    const q = query(goalsRef, where('weekId', '==', selectedWeekId));
+    const isCurrentWeek = selectedWeekId === currentWeekId;
+    const prevWeekId = getWeekId(new Date(Date.now() - 7 * 86400000));
+    const q = isCurrentWeek
+      ? query(goalsRef, where('weekId', 'in', [currentWeekId, prevWeekId]))
+      : query(goalsRef, where('weekId', '==', selectedWeekId));
     
     const unsubscribeGoals = onSnapshot(q, (snapshot) => {
-      const goals = [];
-      snapshot.forEach(doc => goals.push({ id: doc.id, ...doc.data() }));
-      
-      // Sort by updatedAt descending in memory
-      goals.sort((a, b) => {
-        const dateA = a.updatedAt?.toDate() || 0;
-        const dateB = b.updatedAt?.toDate() || 0;
-        return dateB - dateA;
+      const goalsByUser = new Map();
+      snapshot.forEach(doc => {
+        const d = { id: doc.id, ...doc.data() };
+        if (!d.tasks || d.tasks.length === 0) return;
+
+        if (isCurrentWeek) {
+          if (!goalsByUser.has(d.userId)) {
+            goalsByUser.set(d.userId, d);
+          } else {
+            const existing = goalsByUser.get(d.userId);
+            if (d.weekId === currentWeekId && existing.weekId !== currentWeekId) {
+              goalsByUser.set(d.userId, d);
+            }
+          }
+        } else {
+          goalsByUser.set(d.id, d);
+        }
       });
+
+      const goals = Array.from(goalsByUser.values());
+
+      const getTime = (ts) => {
+        if (!ts) return 0;
+        if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+        if (typeof ts.toMillis === 'function') return ts.toMillis();
+        return new Date(ts).getTime() || 0;
+      };
+
+      // Sort by updatedAt descending in memory
+      goals.sort((a, b) => getTime(b.updatedAt) - getTime(a.updatedAt));
 
       setLiveFeed(goals);
       setAllGoals(goals);
@@ -100,6 +128,34 @@ export default function LiveFeedPage({ user, userData }) {
     });
     return () => unsubscribeUsers();
   }, []);
+
+  // Listen to active birthday celebration
+  useEffect(() => {
+    const unsubBirthday = onSnapshot(doc(db, 'system_data', 'birthday'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setBirthdayData(data);
+        const bdayKey = 'tec_bday_seen_' + (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : (data.celebrantName || 'active'));
+        if (data.enabled && !sessionStorage.getItem(bdayKey)) {
+          setShowBirthdayModal(true);
+        } else if (!data.enabled) {
+          setShowBirthdayModal(false);
+        }
+      } else {
+        setBirthdayData(null);
+        setShowBirthdayModal(false);
+      }
+    });
+    return () => unsubBirthday();
+  }, []);
+
+  const handleCloseBirthday = () => {
+    setShowBirthdayModal(false);
+    if (birthdayData) {
+      const bdayKey = 'tec_bday_seen_' + (birthdayData.updatedAt?.toMillis ? birthdayData.updatedAt.toMillis() : (birthdayData.celebrantName || 'active'));
+      sessionStorage.setItem(bdayKey, 'true');
+    }
+  };
 
   // Listen to current user's pairing for this week
   useEffect(() => {
@@ -153,7 +209,7 @@ export default function LiveFeedPage({ user, userData }) {
   
   const totalTasks = allGoals.reduce((acc, goal) => acc + (goal.tasks ? goal.tasks.length : 0), 0);
   const completedTasks = allGoals.reduce((acc, goal) => {
-    return acc + (goal.tasks ? goal.tasks.filter(t => t.status === 'Completed' && t.reviewed).length : 0);
+    return acc + (goal.tasks ? goal.tasks.filter(t => (t.status === 'Completed' && t.reviewed) || t.status === 'completed').length : 0);
   }, 0);
   
   const completionRate = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
@@ -177,18 +233,19 @@ export default function LiveFeedPage({ user, userData }) {
 
   // Filter Feed by Search
   const filteredFeed = liveFeed.filter(goal => {
-    return goal.userName?.toLowerCase().includes(searchQuery.toLowerCase());
+    const name = goal.userName || usersMap[goal.userId]?.name || goal.userEmail || '';
+    return name.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const pendingReviewCount = allGoals.filter(g =>
     g.reviewStatus === 'pending' ||
     g.reviewStatus === 'in_review' ||
-    g.tasks?.some(t => t.status === 'Completed' && (t.proofImage || t.proofText) && !t.reviewed)
+    g.tasks?.some(t => ((t.status === 'Completed' && (t.proofImage || t.proofText)) || t.status === 'submitted') && !t.reviewed)
   ).length;
 
   const fullyVerifiedCount = allGoals.filter(g =>
     g.tasks?.length >= 3 &&
-    g.tasks.slice(0, 3).every(t => t.reviewed && t.adminAction === 'approved' && t.status === 'Completed')
+    g.tasks.slice(0, 3).every(t => (t.reviewed && t.adminAction === 'approved' && t.status === 'Completed') || t.status === 'completed')
   ).length;
 
   const nextDeadline = timeLeft.setup && timeLeft.setup !== 'EXPIRED'
@@ -203,6 +260,42 @@ export default function LiveFeedPage({ user, userData }) {
       ? 'Completion closes in'
       : 'Week is open';
 
+  const isAdminUser = Boolean(
+    userData?.isAdmin ||
+    userData?.role === 'admin' ||
+    usersMap[user?.uid]?.isAdmin ||
+    usersMap[user?.uid]?.role === 'admin'
+  );
+
+  const handleAdminDeleteTask = async (goal, taskIndex) => {
+    const task = goal.tasks?.[taskIndex];
+    const desc = task?.description || `Goal #${taskIndex + 1}`;
+    const memberName = goal.userName || usersMap[goal.userId]?.name || 'this member';
+
+    if (!window.confirm(`Delete individual goal for ${memberName}?\n\n"${desc}"\n\nThis will remove only this specific goal and keep their other goals.`)) {
+      return;
+    }
+
+    try {
+      const updatedTasks = (goal.tasks || []).filter((_, i) => i !== taskIndex);
+      if (updatedTasks.length === 0) {
+        await deleteDoc(doc(db, 'weekly_goals', goal.id));
+        alert(`Goal deleted. Since all goals for ${memberName} were deleted, their weekly declaration has been reset.`);
+      } else {
+        const allReviewed = updatedTasks.every(t => t.reviewed);
+        await updateDoc(doc(db, 'weekly_goals', goal.id), {
+          tasks: updatedTasks,
+          reviewStatus: allReviewed ? 'reviewed' : 'in_review',
+          updatedAt: serverTimestamp()
+        });
+        alert(`Goal "${desc}" deleted successfully.`);
+      }
+    } catch (err) {
+      console.error('Error deleting individual goal:', err);
+      alert('Failed to delete goal: ' + err.message);
+    }
+  };
+
   return (
     <div className="tec-live-page" style={{ position: 'relative', minHeight: '100vh', width: '100%', padding: '0 2rem 4rem' }}>
       {/* Main Title Area */}
@@ -214,6 +307,39 @@ export default function LiveFeedPage({ user, userData }) {
         <h2 style={{ fontSize: '2.5rem', fontWeight: '900', marginBottom: '0.5rem', letterSpacing: 0 }}>This week's receipts</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem' }}>See who declared, who submitted proof, and what still needs review.</p>
       </div>
+
+      {/* ── Active Birthday Celebration Banner ── */}
+      {birthdayData?.enabled && (
+        <div 
+          className="birthday-feed-banner" 
+          onClick={() => setShowBirthdayModal(true)}
+          title="Click to view birthday card"
+        >
+          <div className="birthday-banner-left">
+            {birthdayData.photoUrl ? (
+              <img src={birthdayData.photoUrl} alt={birthdayData.celebrantName} className="birthday-banner-avatar" />
+            ) : (
+              <div className="birthday-banner-avatar-placeholder">🎂</div>
+            )}
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>🎉</span>
+                <span>Celebrating <strong>{birthdayData.celebrantName || 'Celebrant'}</strong>'s Birthday today!</span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {birthdayData.celebrantRole ? `${birthdayData.celebrantRole} • ` : ''}Click to open the birthday card &amp; send wishes!
+              </div>
+            </div>
+          </div>
+          <button 
+            className="btn btn-primary" 
+            style={{ padding: '0.5rem 1.1rem', fontSize: '0.85rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}
+          >
+            <span>View Card</span>
+            <span>🎈</span>
+          </button>
+        </div>
+      )}
 
       {/* Stats Section */}
       <div className="tec-live-metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '3rem' }}>
@@ -504,12 +630,12 @@ export default function LiveFeedPage({ user, userData }) {
               <div key={goal.id} className="glass-panel" style={{ padding: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.5rem' }}>
                   {/* Clickable Avatar */}
-                  <div onClick={() => setSelectedUser({ ...userProfile, userName: goal.userName, userId: goal.userId, profilePicUrl: goal.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })} style={{ cursor: 'pointer', flexShrink: 0 }}>
+                  <div onClick={() => setSelectedUser({ ...userProfile, userName: goal.userName || userProfile.name || 'Member', userId: goal.userId, profilePicUrl: goal.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })} style={{ cursor: 'pointer', flexShrink: 0 }}>
                     {goal.profilePicUrl || userProfile.profilePicUrl ? (
-                      <img src={goal.profilePicUrl || userProfile.profilePicUrl} alt={goal.userName} style={{ width: '52px', height: '52px', borderRadius: '12px', objectFit: 'cover', border: '2px solid var(--primary)' }} />
+                      <img src={goal.profilePicUrl || userProfile.profilePicUrl} alt={goal.userName || userProfile.name} style={{ width: '52px', height: '52px', borderRadius: '12px', objectFit: 'cover', border: '2px solid var(--primary)' }} />
                     ) : (
                       <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold' }}>
-                        {goal.userName?.charAt(0).toUpperCase()}
+                        {(goal.userName || userProfile.name || 'M')?.charAt(0).toUpperCase()}
                       </div>
                     )}
                   </div>
@@ -517,7 +643,7 @@ export default function LiveFeedPage({ user, userData }) {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span onClick={() => setSelectedUser({ ...userProfile, userName: goal.userName, userId: goal.userId, profilePicUrl: goal.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })} style={{ fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', color: 'var(--text-main)' }}>{goal.userName}</span>
+                          <span onClick={() => setSelectedUser({ ...userProfile, userName: goal.userName || userProfile.name || 'Member', userId: goal.userId, profilePicUrl: goal.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })} style={{ fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', color: 'var(--text-main)' }}>{goal.userName || userProfile.name || 'Member'}</span>
                           {userProfile.isAdmin ? (
                             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Admin"><FiShield size={14} /></span>
                           ) : userProfile.isModerator ? (
@@ -536,12 +662,17 @@ export default function LiveFeedPage({ user, userData }) {
                           ))}
                         </div>
                       </div>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                        <FiClock size={12} /> {goal.updatedAt ? new Date(goal.updatedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
-                      </span>
-                    </div>
+
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <FiClock size={12} /> {goal.updatedAt ? new Date(goal.updatedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
+                        </span>
+
+
+
+                      </div>
+
                     {(() => {
-                      const reviewedCompleted = goal.tasks ? goal.tasks.filter(t => t.reviewed && t.status === 'Completed').length : 0;
+                      const reviewedCompleted = goal.tasks ? goal.tasks.filter(t => (t.reviewed && t.status === 'Completed') || t.status === 'completed').length : 0;
                       const totalTasks = goal.tasks ? goal.tasks.length : 1;
                       const displayProgress = Math.round((reviewedCompleted / totalTasks) * 100);
                       return (
@@ -561,27 +692,134 @@ export default function LiveFeedPage({ user, userData }) {
 
                 {/* Task Grid in Feed Card */}
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
-                  {goal.tasks?.map((task, idx) => (
-                    <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.02)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>{task.description}</span>
-                        <span style={{ fontSize: '0.7rem', color: (task.reviewed && task.status === 'Completed') ? '#10b981' : 'var(--text-secondary)', fontWeight: 'bold' }}>
-                          {task.status || 'Pending'}
-                        </span>
-                      </div>
-                      {(task.proofText || task.proofImage) && (
-                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                          <span>Proof:</span>
-                          {task.proofImage && task.proofImage.trim() !== '' && (
-                            <a href={task.proofImage} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}>View Image</a>
-                          )}
-                          {task.proofText && task.proofText.trim() !== '' && (
-                            <a href={task.proofText.startsWith('http') ? task.proofText : `https://${task.proofText}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}>View Link</a>
-                          )}
+                  {goal.tasks?.map((task, idx) => {
+                    const isCompleted = task.status === 'completed' || task.status === 'Completed';
+                    const isSubmitted = task.status === 'submitted';
+                    const isInProgress = task.status === 'in_progress';
+                    const isTodo = task.status === 'todo';
+
+                    const statusBadgeText = isCompleted
+                      ? (task.reviewed ? '✓ Verified Complete' : '✓ Completed')
+                      : isSubmitted
+                      ? '⏳ Submitted (Pending Review)'
+                      : isInProgress
+                      ? '● In Progress'
+                      : isTodo
+                      ? '○ To Do'
+                      : (task.status || 'Pending');
+
+                    const statusBadgeColor = isCompleted
+                      ? '#10b981'
+                      : isSubmitted
+                      ? '#f59e0b'
+                      : isInProgress
+                      ? '#6366f1'
+                      : 'var(--text-secondary)';
+
+                    const statusBadgeBg = isCompleted
+                      ? 'rgba(16, 185, 129, 0.12)'
+                      : isSubmitted
+                      ? 'rgba(245, 158, 11, 0.12)'
+                      : isInProgress
+                      ? 'rgba(99, 102, 241, 0.12)'
+                      : 'rgba(255, 255, 255, 0.05)';
+
+                    return (
+                      <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: '700', fontSize: '0.92rem', color: 'var(--text-main)', marginBottom: '0.2rem' }}>
+                              {task.title || task.description || `Goal #${idx + 1}`}
+                            </div>
+                            {task.title && task.description && (
+                              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.45', marginBottom: '0.35rem' }}>
+                                {task.description}
+                              </div>
+                            )}
+                            {task.deliverable && (
+                              <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, marginTop: '0.25rem' }}>
+                                <strong>Deliverable:</strong> {task.deliverable}
+                              </div>
+                            )}
+                            {task.suggestedBy?.name && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                Assigned by: <strong>{task.suggestedBy.name}</strong>
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              color: statusBadgeColor,
+                              background: statusBadgeBg,
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '20px',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {statusBadgeText}
+                            </span>
+                            {isAdminUser && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAdminDeleteTask(goal, idx);
+                                }}
+                                style={{
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  color: '#ef4444',
+                                  borderRadius: '6px',
+                                  padding: '0.2rem 0.45rem',
+                                  fontSize: '0.72rem',
+                                  fontWeight: '700',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease'
+                                }}
+                                title={`Admin: Delete this goal`}
+                              >
+                                <FiTrash2 size={11} />
+                                <span>Delete</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {/* Proof details */}
+                        {(task.proofUrl || task.proofImage || task.proofText) && (
+                          <div style={{ marginTop: '0.65rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.78rem', display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Proof:</span>
+                            {(task.proofUrl || task.proofImage) && (
+                              <a
+                                href={task.proofUrl || task.proofImage}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  color: 'var(--primary)',
+                                  fontWeight: 600,
+                                  textDecoration: 'underline',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                              >
+                                {task.proofType === 'link' || (!task.proofImage && task.proofUrl) ? '🔗 View Link' : '📷 View Image'}
+                              </a>
+                            )}
+                            {task.proofText && (
+                              <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                "{task.proofText}"
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               );
@@ -757,6 +995,12 @@ export default function LiveFeedPage({ user, userData }) {
           </div>
         </div>
       )}
+      {/* ── Birthday Celebration Modal ── */}
+      <BirthdayModal
+        isOpen={showBirthdayModal}
+        onClose={handleCloseBirthday}
+        celebrationData={birthdayData}
+      />
     </div>
   );
 }

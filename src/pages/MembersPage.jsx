@@ -12,6 +12,7 @@ export default function MembersPage({ user, userData }) {
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState(() => getWeekId(new Date()));
   const [weekSettings, setWeekSettings] = useState(null);
+  const [systemSettings, setSystemSettings] = useState(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -23,10 +24,10 @@ export default function MembersPage({ user, userData }) {
   const [goalDescription, setGoalDescription] = useState('');
   const [deliverable, setDeliverable] = useState('');
 
-  // 0. Listen to current week settings to check peerGoalsEnabled
+  // 0. Listen to current week settings and system settings to check peerGoalsEnabled
   useEffect(() => {
     if (!currentWeekId) return;
-    const unsub = onSnapshot(doc(db, 'week_settings', currentWeekId), (snap) => {
+    const unsubWeek = onSnapshot(doc(db, 'week_settings', currentWeekId), (snap) => {
       if (snap.exists()) {
         setWeekSettings(snap.data());
       } else {
@@ -37,7 +38,21 @@ export default function MembersPage({ user, userData }) {
       console.error('Error fetching week settings:', err);
       setSettingsLoading(false);
     });
-    return () => unsub();
+
+    const unsubSystem = onSnapshot(doc(db, 'system_data', 'settings'), (snap) => {
+      if (snap.exists()) {
+        setSystemSettings(snap.data());
+      } else {
+        setSystemSettings(null);
+      }
+    }, (err) => {
+      console.error('Error fetching system settings:', err);
+    });
+
+    return () => {
+      unsubWeek();
+      unsubSystem();
+    };
   }, [currentWeekId]);
 
   // 1. Fetch all active members in the same Space
@@ -63,21 +78,28 @@ export default function MembersPage({ user, userData }) {
     return () => unsubMembers();
   }, [user]);
 
-  // 2. Fetch my submitted suggestions for the current week
+  // 2. Fetch my submitted suggestions for the current week (with cycle fallback)
   useEffect(() => {
-    if (!user || !currentWeekId) return;
+    if (!user) return;
 
     const qSuggestions = query(
       collection(db, 'suggested_goals'),
-      where('fromUserId', '==', user.uid),
-      where('weekId', '==', currentWeekId)
+      where('fromUserId', '==', user.uid)
     );
 
     const unsubSuggestions = onSnapshot(qSuggestions, (snapshot) => {
       const mapping = {};
+      const allList = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        mapping[data.toUserId] = { id: d.id, ...data };
+        allList.push({ id: d.id, ...data });
+      });
+      const currentList = allList.filter(g => g.weekId === currentWeekId);
+      const activeList = currentList.length > 0 ? currentList : allList;
+      activeList.forEach((g) => {
+        if (!mapping[g.toUserId]) {
+          mapping[g.toUserId] = g;
+        }
       });
       setMySuggestions(mapping);
     }, (err) => {
@@ -159,7 +181,9 @@ export default function MembersPage({ user, userData }) {
   const isAllSuggested = totalPeers > 0 && suggestedCount >= totalPeers;
   const progressPercent = totalPeers > 0 ? Math.round((suggestedCount / totalPeers) * 100) : 0;
 
-  if (!settingsLoading && !weekSettings?.peerGoalsEnabled) {
+  const isPeerGoalsActive = Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled ?? false);
+
+  if (!settingsLoading && !isPeerGoalsActive) {
     return (
       <div className="peer-goals-container" style={{ paddingTop: '3rem' }}>
         <div className="glass-panel" style={{ padding: '3.5rem 2rem', textAlign: 'center', borderRadius: '16px', maxWidth: '640px', margin: '2rem auto' }}>

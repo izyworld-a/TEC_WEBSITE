@@ -16,8 +16,10 @@ COMMUNICATION DIRECTIVES:
 - ALWAYS address the member directly in the second person ("you", "your").
 - NEVER speak about the member in third person.
 - Output ONLY the direct WhatsApp message to send to the member.
+- Keep replies simple, professional, concise, and clean (under 80 words).
+- NEVER write long-form essays or dense walls of text.
+- Use clean formatting, line breaks, and clear bullet points. Do not cluster sentences.
 - Acknowledge their discipline or call out slacking with actionable next steps.
-- Keep replies punchy and optimal for WhatsApp chat (under 100 words).
 
 SCORING RULES:
 - +10 Points: confirmed completion of a weekly goal milestone.
@@ -176,14 +178,40 @@ async function fsFindUserByField(token: string, field: string, value: string): P
   return rows[0] || null;
 }
 
+async function fsFindUserByPhone(token: string, phone: string): Promise<any | null> {
+  const clean = (phone || "").replace(/\D/g, "");
+  if (!clean) return null;
+  const candidates = [clean, `+${clean}`];
+  if (clean.startsWith("234") && clean.length === 13) {
+    candidates.push(`0${clean.slice(3)}`);
+  } else if (clean.startsWith("0") && clean.length === 11) {
+    candidates.push(`234${clean.slice(1)}`);
+    candidates.push(`+234${clean.slice(1)}`);
+  }
+  for (const c of candidates) {
+    for (const field of ["phoneNumber", "whatsappNumber"]) {
+      const doc = await fsFindUserByField(token, field, c);
+      if (doc) return doc;
+    }
+  }
+  return null;
+}
+
 async function fsPatchUserPhone(token: string, docId: string, phone: string): Promise<boolean> {
+  const now = new Date().toISOString();
   const res = await fetch(
-    `${FIRESTORE_BASE}/users/${docId}?updateMask.fieldPaths=phoneNumber&updateMask.fieldPaths=whatsappNumber`,
+    `${FIRESTORE_BASE}/users/${docId}?updateMask.fieldPaths=phoneNumber&updateMask.fieldPaths=whatsappNumber&updateMask.fieldPaths=whatsappOptIn&updateMask.fieldPaths=whatsappLinkedAt&updateMask.fieldPaths=lastInboundAt`,
     {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        fields: { phoneNumber: { stringValue: phone }, whatsappNumber: { stringValue: phone } },
+        fields: {
+          phoneNumber: { stringValue: phone },
+          whatsappNumber: { stringValue: phone },
+          whatsappOptIn: { booleanValue: true },
+          whatsappLinkedAt: { timestampValue: now },
+          lastInboundAt: { timestampValue: now },
+        },
       }),
     },
   );
@@ -219,53 +247,311 @@ function isoWeekId(d: Date): string {
   return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
-// ---------------- Q&A intent router (goal status, wallet, points, leaderboard, deadlines, moderator role, task updates via chat) ----------------
+// ---------------- Role Check & Goal Query Helpers ----------------
 
-function classifyIntent(text: string): { type: string; taskIndex?: number } | null {
-  const t = (text || "").toLowerCase();
-  const taskMatch = t.match(/(?:complete|completed|mark|update|finish|finished|done with)\D{0,20}task\D{0,5}(\d+)/);
-  if (taskMatch) return { type: "update_task", taskIndex: parseInt(taskMatch[1], 10) };
-  if (/leaderboard|rank|position/.test(t)) return { type: "leaderboard" };
-  if (/wallet|balance/.test(t)) return { type: "wallet" };
-  if (/\bpoint/.test(t)) return { type: "points" };
-  if (/deadline/.test(t)) return { type: "deadline" };
-  if (/moderator|my role|active role/.test(t)) return { type: "moderator" };
-  if (/goal|task|milestone|progress/.test(t)) return { type: "goal_status" };
+async function getSenderRole(token: string, userDoc: any, weekId: string): Promise<"admin" | "moderator" | null> {
+  if (!userDoc) return null;
+  const fields = userDoc.fields || {};
+
+  // 1. Admin check
+  if (fields.isAdmin?.booleanValue === true || fields.role?.stringValue === "admin") {
+    return "admin";
+  }
+
+  // 2. Global Moderator check
+  if (fields.isModerator?.booleanValue === true || fields.role?.stringValue === "moderator") {
+    return "moderator";
+  }
+
+  // 3. Weekly assigned Moderator check
+  try {
+    const settings = await fsGetDoc(token, `week_settings/${weekId}`);
+    if (settings) {
+      const weeklyModId = settings.moderatorUserId?.stringValue;
+      const weeklyModEmail = settings.moderatorEmail?.stringValue?.toLowerCase();
+      const userEmail = fields.email?.stringValue?.toLowerCase();
+      if ((weeklyModId && weeklyModId === userDoc.id) || (weeklyModEmail && userEmail && weeklyModEmail === userEmail)) {
+        return "moderator";
+      }
+    }
+  } catch (err: any) {
+    console.warn("[RoleCheck] week_settings check failed:", err?.message);
+  }
+
   return null;
 }
 
-async function handleIntent(token: string, userId: string, intent: { type: string; taskIndex?: number }): Promise<string | null> {
-  const userDoc = await fsFindUserByField(token, "phoneNumber", userId) || await fsFindUserByField(token, "whatsappNumber", userId);
+async function handleMemberGoals(
+  token: string,
+  senderDoc: any,
+  targetName: string,
+  weekId: string,
+): Promise<string> {
+  const role = await getSenderRole(token, senderDoc, weekId);
+  if (!role) {
+    return [
+      "🔒 *Access Restricted*",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      "Member goals lookup is reserved for Circle Admins and this week's assigned Moderator.",
+      "",
+      "To check your own weekly goals, reply *goals* or *my goals*.",
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
+  }
+
+  const cleanTarget = targetName.toLowerCase().replace(/['"]s?\b/gi, "").replace(/['"]/g, "").trim();
+  const allUsers = await fsRunQuery(token, {
+    from: [{ collectionId: "users" }],
+    limit: 200,
+  });
+
+  const targetWords = cleanTarget.split(/\s+/).filter((w: string) => w.length >= 2);
+  const matchedUser = allUsers.find((u: any) => {
+    const name = (u.fields?.name?.stringValue || u.fields?.displayName?.stringValue || "").toLowerCase();
+    const email = (u.fields?.email?.stringValue || "").toLowerCase();
+    if (!name && !email) return false;
+    if (name.includes(cleanTarget) || (email && email.includes(cleanTarget))) return true;
+    if (targetWords.length > 0 && targetWords.some((w: string) => name.includes(w) || email.includes(w))) return true;
+    return false;
+  });
+
+  if (!matchedUser) {
+    return [
+      "❓ *Member Not Found*",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      `Couldn't find any circle member matching "${targetName}".`,
+      "",
+      "Please check the name or email and try again (e.g. *goals for Amaka*).",
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
+  }
+
+  const memberName = matchedUser.fields?.displayName?.stringValue || matchedUser.fields?.name?.stringValue || targetName;
+  const goalDoc = await fsGetDoc(token, `weekly_goals/${matchedUser.id}_${weekId}`);
+
+  const lines: string[] = [
+    `🎯 *Goals for ${memberName}*`,
+    `*Week ${weekId}*`,
+    "━━━━━━━━━━━━━━━━━━━━━",
+  ];
+
+  if (!goalDoc) {
+    lines.push("No goals set yet for this week.");
+  } else {
+    const progress = goalDoc.progress?.stringValue || goalDoc.progress?.integerValue || "0";
+    lines[1] = `*Week ${weekId}* • Progress: ${progress}%`;
+    const tasksArr = goalDoc.tasks?.arrayValue?.values ?? [];
+    if (tasksArr.length === 0) {
+      lines.push("No tasks recorded.");
+    } else {
+      tasksArr.forEach((t: any, i: number) => {
+        const tf = t.mapValue?.fields || {};
+        const isDone = tf.status?.stringValue === "Completed";
+        const desc = tf.description?.stringValue || `Task ${i + 1}`;
+        const hasProof = Boolean(tf.evidenceUrl?.stringValue || tf.proofUrl?.stringValue);
+        lines.push(`${i + 1}. ${isDone ? "✅" : "⏳"} ${desc}${hasProof ? " 📎" : ""}`);
+      });
+    }
+  }
+
+  // PRIVACY: Only Admin can see Wallet & Points. Moderator MUST NOT see it.
+  if (role === "admin") {
+    const bal = matchedUser.fields?.walletBalance?.integerValue ?? matchedUser.fields?.walletBalance?.doubleValue ?? "0";
+    const pts = matchedUser.fields?.totalPoints?.integerValue ?? "0";
+    lines.push("━━━━━━━━━━━━━━━━━━━━━");
+    lines.push(`💰 Wallet: ₦${bal} | ⭐ Points: ${pts}`);
+  }
+
+  lines.push("━━━━━━━━━━━━━━━━━━━━━");
+  return lines.join("\n");
+}
+
+async function handleCircleGoalsOverview(
+  token: string,
+  senderDoc: any,
+  weekId: string,
+): Promise<string> {
+  const role = await getSenderRole(token, senderDoc, weekId);
+  if (!role) {
+    return [
+      "🔒 *Access Restricted*",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      "Circle overview is reserved for Circle Admins and this week's assigned Moderator.",
+      "",
+      "To check your own weekly goals, reply *goals* or *my goals*.",
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
+  }
+
+  const allUsers = await fsRunQuery(token, {
+    from: [{ collectionId: "users" }],
+    limit: 200,
+  });
+
+  const allGoals = await fsRunQuery(token, {
+    from: [{ collectionId: "weekly_goals" }],
+    limit: 200,
+  });
+
+  const currentGoals = allGoals.filter((g: any) => g.id.endsWith(`_${weekId}`));
+  const totalMembers = allUsers.length;
+  const lockedCount = currentGoals.length;
+  const notSetCount = Math.max(0, totalMembers - lockedCount);
+
+  return [
+    `📊 *Circle Overview • Week ${weekId}*`,
+    "━━━━━━━━━━━━━━━━━━━━━",
+    `👥 Active Members: ${totalMembers}`,
+    `🎯 Goals Locked: ${lockedCount}`,
+    `⏳ Pending Setup: ${notSetCount}`,
+    "━━━━━━━━━━━━━━━━━━━━━",
+    "To view a member's goals:",
+    "Reply *goals for [Name]* (e.g. *goals for Amaka*)",
+    "━━━━━━━━━━━━━━━━━━━━━",
+  ].join("\n");
+}
+
+// ---------------- Q&A intent router ----------------
+
+function classifyIntent(text: string): { type: string; taskIndex?: number; targetName?: string } | null {
+  const t = (text || "").toLowerCase().trim();
+  if (!t) return null;
+
+  // 1. Task progress update
+  const taskMatch = t.match(/(?:complete|completed|mark|update|finish|finished|done with)\D{0,20}task\D{0,5}(\d+)/i);
+  if (taskMatch) return { type: "update_task", taskIndex: parseInt(taskMatch[1], 10) };
+
+  // 2. Circle-wide goals overview
+  if (
+    /^(?:all\s+goals|circle\s+goals|goals\s+overview|circle\s+overview|who\s+set\s+goals|everyone(?:'s)?\s+goals)$/i.test(t) ||
+    /\b(?:all\s+goals|circle\s+overview|goals\s+overview|who\s+set\s+goals)\b/i.test(t)
+  ) {
+    return { type: "circle_goals_overview" };
+  }
+
+  // 3. Member goals query (Admin / Moderator)
+  // Supports: "goals for Amaka", "goals Amaka", "Amaka goals", "Amaka's goals", "what are Amaka's goals", "check Amaka", "show Amaka goals", etc.
+  let candidate: string | null = null;
+  const patternFor = t.match(/(?:(?:what\s+are|show(?:\s+me)?|view|check|get|see|display)?\s*(?:the\s+)?(?:weekly\s+)?goals?\s*(?:for|of|by|on|regarding|:)\s*)([a-z0-9@._\s-]+)/i);
+  const patternPossessive = t.match(/(?:(?:what\s+are|show(?:\s+me)?|view|check|get|see|display)\s+)?([a-z0-9@._-]+)(?:'s|’s)?\s+(?:weekly\s+)?goals?/i);
+  const patternDirectGoals = t.match(/^goals?\s+([a-z0-9@._-]+)$/i);
+  const patternDirectCheck = t.match(/^(?:check|show|view|lookup|inspect)\s+([a-z0-9@._-]+)$/i);
+
+  if (patternFor) {
+    candidate = patternFor[1];
+  } else if (patternPossessive) {
+    candidate = patternPossessive[1];
+  } else if (patternDirectGoals) {
+    candidate = patternDirectGoals[1];
+  } else if (patternDirectCheck) {
+    candidate = patternDirectCheck[1];
+  }
+
+  if (candidate) {
+    const cleaned = candidate
+      .replace(/['"]s?\b/gi, "")
+      .replace(/['"]/g, "")
+      .replace(/\b(?:weekly\s+)?goals?$/gi, "")
+      .trim();
+
+    const reservedWords = /^(?:my|me|myself|mine|our|weekly|the|all|circle|everyone|today|this\s+week|now|status|update)$/i;
+    if (cleaned && !reservedWords.test(cleaned)) {
+      return { type: "member_goals", targetName: cleaned };
+    }
+  }
+
+  if (/leaderboard|rank|position/.test(t)) return { type: "leaderboard" };
+  if (/wallet|balance/.test(t)) return { type: "wallet" };
+  if (/\bpoints?\b/.test(t)) return { type: "points" };
+  if (/deadline/.test(t)) return { type: "deadline" };
+  if (/moderator|my role|active role/.test(t)) return { type: "moderator" };
+  if (/goal|task|milestone|progress/.test(t)) return { type: "goal_status" };
+
+  return null;
+}
+
+async function handleIntent(
+  token: string,
+  userId: string,
+  intent: { type: string; taskIndex?: number; targetName?: string },
+): Promise<string | null> {
+  const userDoc = await fsFindUserByPhone(token, userId);
   if (!userDoc) return null;
-  const name = (userDoc.fields?.name?.stringValue || "there").trim().split(/\s+/)[0];
+  const name = (userDoc.fields?.displayName?.stringValue || userDoc.fields?.name?.stringValue || "there").trim().split(/\s+/)[0];
   const weekId = isoWeekId(lagosNow());
+
+  if (intent.type === "member_goals" && intent.targetName) {
+    return await handleMemberGoals(token, userDoc, intent.targetName, weekId);
+  }
+
+  if (intent.type === "circle_goals_overview") {
+    return await handleCircleGoalsOverview(token, userDoc, weekId);
+  }
 
   if (intent.type === "wallet") {
     const bal = userDoc.fields?.walletBalance?.integerValue ?? userDoc.fields?.walletBalance?.doubleValue ?? "0";
-    return `\u{1F4B0} ${name}, your wallet balance is \u20A6${bal}.`;
+    const isActive = Number(bal) >= 1000;
+    return [
+      "💰 *TEC Wallet*",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      `Member: ${name}`,
+      `Balance: ₦${bal}`,
+      `Status: ${isActive ? "Active ✅" : "Action Required ⚠️ (Min: ₦1,000)"}`,
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
   }
+
   if (intent.type === "points") {
     const pts = userDoc.fields?.totalPoints?.integerValue ?? "0";
-    return `\u2B50 ${name}, you have ${pts} total points.`;
+    return [
+      "⭐ *TEC Points*",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      `Member: ${name}`,
+      `Total Points: ${pts} pts`,
+      "Keep executing to climb the leaderboard!",
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
   }
+
   if (intent.type === "deadline") {
     const settings = await fsGetDoc(token, `week_settings/${weekId}`);
     const setup = settings?.setupDeadline?.stringValue;
     const completion = settings?.completionDeadline?.stringValue;
-    if (!setup && !completion) return `\u{1F4C5} No deadlines have been set for Week ${weekId} yet.`;
-    return `\u{1F4C5} Week ${weekId} deadlines:\n${setup ? `Goal setup: ${setup}\n` : ""}${completion ? `Completion: ${completion}` : ""}`.trim();
+    if (!setup && !completion) {
+      return `📅 *Week ${weekId} Deadlines*\n━━━━━━━━━━━━━━━━━━━━━\nNo deadlines set yet for Week ${weekId}.\n━━━━━━━━━━━━━━━━━━━━━`;
+    }
+    return [
+      `📅 *Week ${weekId} Deadlines*`,
+      "━━━━━━━━━━━━━━━━━━━━━",
+      setup ? `• Goal Setup: ${setup}` : null,
+      `• Goal Completion: ${completion || "Sunday 11:59 PM"}`,
+      "━━━━━━━━━━━━━━━━━━━━━",
+      "Lock in and complete your goals before the deadline!",
+    ].filter(Boolean).join("\n");
   }
+
   if (intent.type === "moderator") {
     const settings = await fsGetDoc(token, `week_settings/${weekId}`);
     const modId = settings?.moderatorUserId?.stringValue;
     if (modId && modId === userDoc.id) {
-      return `\u{1F396}\uFE0F Yes ${name} \u2014 you're the moderator for Week ${weekId}. You can review and approve members' task proofs on the site.`;
+      return [
+        `🎖️ *Moderator Role • Week ${weekId}*`,
+        "━━━━━━━━━━━━━━━━━━━━━",
+        "Status: Active Moderator ✅",
+        "You are leading the circle this week. Review and approve members' task proofs on the portal.",
+        "━━━━━━━━━━━━━━━━━━━━━",
+      ].join("\n");
     }
     const modName = settings?.moderatorName?.stringValue;
-    return modName
-      ? `This week's moderator is ${modName}. You don't have an active role assigned this week.`
-      : `No moderator has been assigned for Week ${weekId} yet, and you don't have an active role.`;
+    return [
+      `🎖️ *Moderator • Week ${weekId}*`,
+      "━━━━━━━━━━━━━━━━━━━━━",
+      `This week's Moderator: ${modName || "Pending Assignment"}`,
+      "Your Role: Execution Member",
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
   }
+
   if (intent.type === "leaderboard") {
     const rows = await fsRunQuery(token, {
       from: [{ collectionId: "users" }],
@@ -273,17 +559,35 @@ async function handleIntent(token: string, userId: string, intent: { type: strin
       limit: 500,
     });
     const idx = rows.findIndex((r: any) => r.id === userDoc.id);
-    if (idx === -1) return `Couldn't find your leaderboard position yet \u2014 make sure you have points logged.`;
-    return `\u{1F3C6} ${name}, you're ranked #${idx + 1} of ${rows.length} on the TEC leaderboard.`;
+    if (idx === -1) {
+      return `🏆 *TEC Leaderboard*\n━━━━━━━━━━━━━━━━━━━━━\nCouldn't find your rank yet — complete your weekly goals to log points!\n━━━━━━━━━━━━━━━━━━━━━`;
+    }
+    return [
+      "🏆 *TEC Leaderboard*",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      `Member: ${name}`,
+      `Rank: #${idx + 1} of ${rows.length}`,
+      "Keep executing to climb higher!",
+      "━━━━━━━━━━━━━━━━━━━━━",
+    ].join("\n");
   }
+
   if (intent.type === "goal_status" || intent.type === "update_task") {
     const goal = await fsGetDoc(token, `weekly_goals/${userDoc.id}_${weekId}`);
-    if (!goal) return `You haven't set your goals for Week ${weekId} yet. Head to the site and set them now \u2014 execution starts with a plan.`;
+    if (!goal) {
+      return [
+        `🎯 *Week ${weekId} Goals*`,
+        "━━━━━━━━━━━━━━━━━━━━━",
+        `You haven't set your goals for Week ${weekId} yet.`,
+        "👉 Set them here: https://tec-weekly-goals.web.app/dashboard",
+        "━━━━━━━━━━━━━━━━━━━━━",
+      ].join("\n");
+    }
     const arr = goal.tasks?.arrayValue?.values ?? [];
     if (intent.type === "update_task") {
       const idx = (intent.taskIndex ?? 0) - 1;
       if (idx < 0 || idx >= arr.length) {
-        return `You only have ${arr.length} task(s) this week \u2014 reply "complete task 1" through "complete task ${arr.length}".`;
+        return `⚠️ You have ${arr.length} task(s) this week. Reply *complete task 1* through *complete task ${arr.length}*.`;
       }
       const tf = arr[idx].mapValue.fields;
       tf.status = { stringValue: "Completed" };
@@ -304,16 +608,33 @@ async function handleIntent(token: string, userId: string, intent: { type: strin
         },
       );
       const desc = tf.description?.stringValue || `Task ${idx + 1}`;
-      return `\u2705 Marked done: "${desc}"\n\nYou're now at ${progressPct}% for Week ${weekId}. Keep going!`;
+      return [
+        "✅ *Task Completed!*",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        `"${desc}"`,
+        `Progress: ${progressPct}% for Week ${weekId}`,
+        "━━━━━━━━━━━━━━━━━━━━━",
+        "Great execution! Keep compounding. 💪",
+      ].join("\n");
     }
+
     const progress = goal.progress?.stringValue || goal.progress?.integerValue || "0";
     const lines = arr.slice(0, 6).map((t: any, i: number) => {
       const tf = t.mapValue.fields;
       const done = tf.status?.stringValue === "Completed";
-      return `${done ? "\u2705" : `${i + 1}.`} ${tf.description?.stringValue || ""}`;
+      return `${i + 1}. ${done ? "✅" : "⏳"} ${tf.description?.stringValue || ""}`;
     }).join("\n");
-    return `\u{1F525} ${name}, Week ${weekId} goals (${progress}%):\n\n${lines || "No tasks found."}\n\nReply "complete task <number>" to mark one done.`;
+
+    return [
+      `🎯 *Your Goals • Week ${weekId}*`,
+      `Progress: ${progress}%`,
+      "━━━━━━━━━━━━━━━━━━━━━",
+      lines || "No tasks found.",
+      "━━━━━━━━━━━━━━━━━━━━━",
+      "Reply *complete task <number>* to mark one done.",
+    ].join("\n");
   }
+
   return null;
 }
 
@@ -396,15 +717,7 @@ async function generateFacilitatorReply(opts: {
   const token = await getFirebaseToken();
   if (token) {
     try {
-      let doc: any = null;
-      for (const field of ["phoneNumber", "whatsappNumber"]) {
-        doc = await fsFindUserByField(token, field, opts.userId);
-        if (doc) break;
-      }
-      if (!doc) {
-        const stripped = opts.userId.replace(/^\+/, "");
-        doc = await fsFindUserByField(token, "phoneNumber", stripped);
-      }
+      const doc = await fsFindUserByPhone(token, opts.userId);
       if (doc) {
         const name = doc.fields?.displayName?.stringValue || doc.fields?.name?.stringValue;
         if (name) memberName = name;

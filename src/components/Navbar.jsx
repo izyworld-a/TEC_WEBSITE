@@ -7,16 +7,18 @@ import { FiSun, FiMoon, FiLogOut, FiBell, FiClock, FiMenu, FiX, FiDownload } fro
 import { getWeekId } from '../utils/weekUtils';
 import { CircleStatusChip, WeekIdentityChip } from './ProductUI';
 
-export default function Navbar({ user, userData }) {
+export default function Navbar({ user, userData, isDashboardSidebarOpen, onToggleDashboardSidebar }) {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/';
+  const isDashboard = location.pathname === '/dashboard';
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [weekSettings, setWeekSettings] = useState(null);
+  const [systemSettings, setSystemSettings] = useState(null);
   const [timeLeft, setTimeLeft] = useState({ setup: null, completion: null });
   const [announcements, setAnnouncements] = useState([]);
   const notifRef = useRef(null);
@@ -73,6 +75,14 @@ export default function Navbar({ user, userData }) {
       }
     });
 
+    const unsubscribeSystemSettings = onSnapshot(doc(db, 'system_data', 'settings'), (snap) => {
+      if (snap.exists()) {
+        setSystemSettings(snap.data());
+      } else {
+        setSystemSettings(null);
+      }
+    });
+
     // Listen to active announcements
     const unsubAnnouncements = onSnapshot(
       query(collection(db, 'announcements'), orderBy('createdAt', 'desc')),
@@ -82,7 +92,11 @@ export default function Navbar({ user, userData }) {
       }
     );
 
-    return () => { unsubscribeSettings(); unsubAnnouncements(); };
+    return () => { 
+      unsubscribeSettings(); 
+      unsubscribeSystemSettings();
+      unsubAnnouncements(); 
+    };
   }, []);
 
   useEffect(() => {
@@ -132,8 +146,10 @@ export default function Navbar({ user, userData }) {
       position: 'sticky',
       top: 0,
       zIndex: 1000,
-      paddingTop: '0',
+      paddingTop: 'env(safe-area-inset-top, 0px)',
       paddingBottom: '0',
+      paddingLeft: 'env(safe-area-inset-left, 0px)',
+      paddingRight: 'env(safe-area-inset-right, 0px)',
       backgroundColor: 'var(--bg-main)',
       transition: 'background-color 0.3s ease'
     }}>
@@ -285,25 +301,18 @@ export default function Navbar({ user, userData }) {
               </button>
             )}
 
-            {/* Authenticated Links & Sign Out Button inside Dashboard */}
-            {user ? (
+            {/* Authenticated Links & Sign Out Button (hidden on /dashboard where sidebar exists) */}
+            {user && !isDashboard ? (
               <div className="desktop-only tec-nav-actions" style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                 {userData?.isAdmin && (
                   <Link to="/admin" className="btn btn-secondary tec-nav-btn">Admin</Link>
                 )}
-                {(userData?.isModerator || userData?.isAdmin) && (
+                {userData?.isModerator && (
                   <Link to="/moderator" className="btn btn-secondary tec-nav-btn" style={{ background: 'rgba(168,85,247,0.15)', borderColor: '#a855f7', color: '#a855f7' }}>Moderator</Link>
                 )}
-                {userData?.status !== 'Pending' && (
+                {(userData?.isAdmin || userData?.status !== 'Pending') && (
                   <Link to="/dashboard" className="btn btn-secondary tec-nav-btn">Dashboard</Link>
                 )}
-                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && (
-                  <Link to="/members" className="btn btn-secondary tec-nav-btn">Members</Link>
-                )}
-                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && (
-                  <Link to="/goals-inbox" className="btn btn-secondary tec-nav-btn">Goals Inbox</Link>
-                )}
-                <Link to="/livefeed" className="btn btn-secondary tec-nav-btn">Live Feed</Link>
 
                 {/* Profile-integrated Logout / Sign Out Button */}
                 <button
@@ -318,35 +327,42 @@ export default function Navbar({ user, userData }) {
                   }}
                   title="Sign Out"
                 >
-                  {userData?.profilePicUrl ? (
-                    <img src={userData.profilePicUrl} alt="User" style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
-                  ) : (
-                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem' }}>
-                      {userData?.name?.charAt(0).toUpperCase() || 'U'}
-                    </div>
-                  )}
-                  <span>Sign Out</span>
                   <FiLogOut size={14} />
+                  <span>Sign Out</span>
                 </button>
               </div>
-            ) : (
+            ) : !user ? (
               /* Non-authenticated Auth Route Buttons (e.g. /login, /register) */
               <div className="desktop-only" style={{ display: 'flex', gap: '0.35rem' }}>
                 <Link to="/" className="btn btn-secondary tec-nav-btn">Home</Link>
                 {location.pathname !== '/login' && <Link to="/login" className="btn btn-secondary tec-nav-btn">Login</Link>}
                 {location.pathname !== '/register' && <Link to="/register" className="btn btn-primary tec-nav-btn">Sign Up</Link>}
               </div>
-            )}
+            ) : null}
 
-            {/* Mobile Menu Toggle */}
-            <button className="mobile-menu-btn" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} aria-label="Toggle Menu">
-              {isMobileMenuOpen ? <FiX size={24} /> : <FiMenu size={24} />}
+            {/* Mobile Menu / Sidebar Drawer Toggle */}
+            <button
+              className="mobile-menu-btn"
+              onClick={() => {
+                if (isDashboard && onToggleDashboardSidebar) {
+                  onToggleDashboardSidebar();
+                } else {
+                  setIsMobileMenuOpen(!isMobileMenuOpen);
+                }
+              }}
+              aria-label="Toggle Menu"
+            >
+              {isDashboard ? (
+                isDashboardSidebarOpen ? <FiX size={24} /> : <FiMenu size={24} />
+              ) : (
+                isMobileMenuOpen ? <FiX size={24} /> : <FiMenu size={24} />
+              )}
             </button>
           </div>
         )}
 
-        {/* ── Mobile Menu Dropdown ── */}
-        {isMobileMenuOpen && (
+        {/* ── Mobile Menu Dropdown (Only for non-dashboard pages) ── */}
+        {isMobileMenuOpen && !isDashboard && (
           <div className="mobile-nav-dropdown glass-panel">
             {isHome ? (
               <>
@@ -357,12 +373,12 @@ export default function Navbar({ user, userData }) {
               </>
             ) : user ? (
               <>
-                {userData?.status !== 'Pending' && <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Dashboard</Link>}
-                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/members" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Members</Link>}
-                {Boolean(weekSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/goals-inbox" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Goals Inbox</Link>}
+                {(userData?.isAdmin || userData?.status !== 'Pending') && <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Dashboard</Link>}
+                {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/members" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Members</Link>}
+                {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/goals-inbox" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Goals Inbox</Link>}
                 <Link to="/livefeed" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Live Feed</Link>
                 {userData?.isAdmin && <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Admin</Link>}
-                {(userData?.isModerator || userData?.isAdmin) && <Link to="/moderator" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: '#a855f7', fontWeight: 'bold' }}>Moderator</Link>}
+                {userData?.isModerator && <Link to="/moderator" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: '#a855f7', fontWeight: 'bold' }}>Moderator</Link>}
                 {installPrompt && !isInstalled && (
                   <button
                     onClick={() => { handleInstall(); setIsMobileMenuOpen(false); }}

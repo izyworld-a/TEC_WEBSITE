@@ -22,6 +22,36 @@ export default function PendingPage({ userData }) {
         <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--warning)' }}>
           To activate your account, you must sign the terms and have a minimum of ₦1000 in your wallet. An admin will then approve your account.
         </p>
+
+        {/* WhatsApp Bot Connection */}
+        <div style={{ marginTop: '1.25rem', padding: '1rem', background: 'rgba(37, 211, 102, 0.1)', border: '1px solid rgba(37, 211, 102, 0.3)', borderRadius: '8px' }}>
+          <strong style={{ fontSize: '0.9rem', color: '#10b981', display: 'block', marginBottom: '0.3rem' }}>
+            📱 Connect with TEC WhatsApp Bot
+          </strong>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem 0', lineHeight: '1.4' }}>
+            Message our official WhatsApp bot (+234 902 667 5879) now to pair your phone number and activate 24-hour instant notifications.
+          </p>
+          <a
+            href={`https://wa.me/2349026675879?text=${encodeURIComponent(`Hi TEC, my registered email is ${userData?.email || ''}`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn"
+            style={{
+              background: '#25D366',
+              color: '#ffffff',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem'
+            }}
+          >
+            <span>💬 Message Bot on WhatsApp</span>
+          </a>
+        </div>
       </div>
       <button 
         className="btn btn-secondary" 
