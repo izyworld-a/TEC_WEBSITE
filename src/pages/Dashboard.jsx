@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc, serverTimestamp, setDoc, getDoc, collection, query, where, getDocs, addDoc, increment, limit } from 'firebase/firestore';
 import { uploadToCloudinary } from '../cloudinary';
 import { FiCamera, FiAlertCircle, FiSave, FiDollarSign, FiShield, FiTrendingUp, FiDownload, FiStar, FiActivity, FiZap, FiAward, FiUser, FiCheckCircle } from 'react-icons/fi';
-import { LuLayoutDashboard, LuTarget, LuEye, LuZap, LuCalendar, LuUsers, LuUser, LuWallet, LuTrophy, LuClock, LuStar, LuChevronDown, LuPlus, LuFileText, LuDownload, LuCamera, LuInbox, LuRadio, LuShield, LuSettings, LuMenu, LuX, LuLogOut } from 'react-icons/lu';
+import { LuLayoutDashboard, LuTarget, LuEye, LuZap, LuCalendar, LuUsers, LuUser, LuWallet, LuTrophy, LuClock, LuStar, LuChevronDown, LuPlus, LuFileText, LuDownload, LuCamera, LuInbox, LuRadio, LuShield, LuSettings, LuMenu, LuX, LuLogOut, LuBriefcase, LuLayers } from 'react-icons/lu';
 import { onSnapshot } from 'firebase/firestore';
 import { getWeekId } from '../utils/weekUtils';
 import './dashboard.css';
 import ActiveGoalsKanban from '../components/ActiveGoalsKanban';
+import PortfolioManager from '../components/PortfolioManager';
 import './peerGoals.css';
 
 
@@ -64,6 +67,35 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
   const [profilePic, setProfilePic] = useState(userData?.profilePicUrl || '');
   const [uploading, setUploading] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
+
+  // TEC Space Directory & Availability State
+  const [availableForHire, setAvailableForHire] = useState(userData?.availableForHire !== false);
+  useEffect(() => {
+    if (userData?.availableForHire !== undefined) {
+      setAvailableForHire(userData.availableForHire);
+    }
+  }, [userData?.availableForHire]);
+
+  // Inbound Job Offers from Clients
+  const [inboundOffers, setInboundOffers] = useState([]);
+  useEffect(() => {
+    if (!user) return;
+    const qOffers = query(collection(db, 'job_offers'), where('toUserId', '==', user.uid));
+    const unsubOffers = onSnapshot(qOffers, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+      setInboundOffers(list);
+    }, (err) => console.warn('Error fetching offers:', err));
+    return () => unsubOffers();
+  }, [user]);
+
+  const handleUpdateOfferStatus = async (offerId, newStatus) => {
+    try {
+      await updateDoc(doc(db, 'job_offers', offerId), { status: newStatus });
+    } catch (e) {
+      console.error('Failed to update offer status', e);
+    }
+  };
 
   // Skills State
   const [skills, setSkills] = useState(userData?.skills || []);
@@ -439,8 +471,22 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
     }, { merge: true });
 
     if (bonusAwarded) {
+      try {
+        confetti({
+          particleCount: 75,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch (_) {}
       setStreakMsg('🎉 Amazing! You hit a 7-day streak! +2 bonus points awarded. Streak resets — keep going!');
     } else {
+      try {
+        confetti({
+          particleCount: 35,
+          spread: 50,
+          origin: { y: 0.7 }
+        });
+      } catch (_) {}
       setStreakMsg(`✅ Day ${newStreak} checked! ${7 - newStreak} day${7 - newStreak !== 1 ? 's' : ''} to go for your +2 bonus!`);
     }
   };
@@ -456,6 +502,7 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
     try {
       await updateDoc(doc(db, "users", user.uid), {
         name, state: userState, country: userCountry, profession, bio, skills,
+        availableForHire,
         whatsappNumber: waNumber, phoneNumber: waNumber, whatsappOptIn: true,
         socials: {
           twitter: socials.twitter || '',
@@ -1039,6 +1086,32 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
               </button>
               <button
                 type="button"
+                onClick={() => { setActiveTab('offers'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'offers' ? 'active' : ''}`}
+              >
+                <LuBriefcase size={16} />
+                <span>Client Offers</span>
+                {inboundOffers.filter(o => o.status === 'pending').length > 0 && (
+                  <span style={{ marginLeft: 'auto', background: '#4f46e5', color: '#ffffff', borderRadius: '999px', padding: '1px 7px', fontSize: '0.72rem', fontWeight: '700' }}>
+                    {inboundOffers.filter(o => o.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('portfolio'); setIsMobileSidebarOpen(false); }}
+                className={`dashboard-nav-item ${activeTab === 'portfolio' ? 'active' : ''}`}
+              >
+                <LuLayers size={16} />
+                <span>Featured Works</span>
+                {(userData?.portfolioWorks?.length || 0) > 0 && (
+                  <span style={{ marginLeft: 'auto', background: 'rgba(79, 70, 229, 0.12)', color: 'var(--primary)', borderRadius: '999px', padding: '1px 7px', fontSize: '0.72rem', fontWeight: '700' }}>
+                    {userData.portfolioWorks.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
                 onClick={() => { setActiveTab('profile'); setIsMobileSidebarOpen(false); }}
                 className={`dashboard-nav-item ${activeTab === 'profile' ? 'active' : ''}`}
               >
@@ -1049,6 +1122,14 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
 
             <div className="dashboard-sidebar-header" style={{ marginTop: '1.25rem' }}>Community</div>
             <nav className="dashboard-sidebar-nav" aria-label="Community spaces">
+              <Link
+                to="/space"
+                className="dashboard-nav-item"
+                onClick={() => setIsMobileSidebarOpen(false)}
+              >
+                <LuBriefcase size={16} />
+                <span>TEC Space</span>
+              </Link>
               {Boolean(isPeerGoalsActive) && (
                 <Link
                   to="/members"
@@ -1257,51 +1338,120 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
             <p>Your weekly accountability dashboard</p>
           </div>
 
-          {/* Metrics Row (4 Tiles) */}
-          <section className="dash-metrics-grid" aria-label="Member metrics">
-            <div className="dash-metric-card">
-              <div className="dash-metric-chip">
+          {/* Bento Metrics Row (4 Polished Tiles with Micro-Interactions) */}
+          <motion.section
+            className="dash-metrics-grid"
+            aria-label="Member metrics"
+            initial="hidden"
+            animate="visible"
+            variants={{
+              hidden: { opacity: 0 },
+              visible: {
+                opacity: 1,
+                transition: { staggerChildren: 0.08 }
+              }
+            }}
+          >
+            {/* 1. Wallet Card */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                visible: { opacity: 1, y: 0, transition: { duration: 0.25 } }
+              }}
+              whileHover={{ y: -3 }}
+              className="dash-metric-card"
+            >
+              <div className="dash-metric-chip" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.25)' }}>
                 <LuWallet />
               </div>
               <div className="dash-metric-info">
-                <span className="dash-metric-title">Wallet</span>
+                <span className="dash-metric-title">Wallet Balance</span>
                 <span className="dash-metric-number">₦{(userData?.walletBalance || 0).toLocaleString()}</span>
+                <span className={`dash-metric-status-badge ${(userData?.walletBalance || 0) >= 1000 ? 'success' : 'warning'}`}>
+                  {(userData?.walletBalance || 0) >= 1000 ? '✓ Active' : '⚠ Low Balance'}
+                </span>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="dash-metric-card">
-              <div className="dash-metric-chip">
+            {/* 2. Lifetime Points */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                visible: { opacity: 1, y: 0, transition: { duration: 0.25 } }
+              }}
+              whileHover={{ y: -3 }}
+              className="dash-metric-card"
+            >
+              <div className="dash-metric-chip" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.25)' }}>
                 <LuTrophy />
               </div>
               <div className="dash-metric-info">
                 <span className="dash-metric-title">Lifetime Points</span>
                 <span className="dash-metric-number">{(userData?.totalPoints || 0).toLocaleString()}</span>
+                <span className="dash-metric-status-badge success">
+                  ⭐ Level {Math.floor((userData?.totalPoints || 0) / 10) + 1}
+                </span>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="dash-metric-card">
-              <div className="dash-metric-chip">
+            {/* 3. Daily Check-In Streak */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                visible: { opacity: 1, y: 0, transition: { duration: 0.25 } }
+              }}
+              whileHover={{ y: -3 }}
+              className="dash-metric-card"
+              style={{ cursor: 'pointer' }}
+              onClick={() => setActiveTab('streak')}
+              title="Click to view daily check-in streak"
+            >
+              <div className="dash-metric-chip" style={{ background: 'rgba(99, 102, 241, 0.12)', color: '#6366f1', borderColor: 'rgba(99, 102, 241, 0.25)' }}>
                 <LuClock />
               </div>
               <div className="dash-metric-info">
                 <span className="dash-metric-title">Daily Check-In</span>
-                <span className="dash-metric-number">{streakData.currentStreak || 0}</span>
+                <span className="dash-metric-number">
+                  {streakData.currentStreak || 0} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>/ 7 days</span>
+                </span>
+                <span className={`dash-metric-status-badge ${streakData.checkedInToday ? 'success' : 'warning'}`}>
+                  {streakData.checkedInToday ? '✓ Done Today' : '● Pending Today'}
+                </span>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="dash-metric-card">
-              <div className="dash-metric-chip">
+            {/* 4. Recognition */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                visible: { opacity: 1, y: 0, transition: { duration: 0.25 } }
+              }}
+              whileHover={{ y: -3 }}
+              className="dash-metric-card"
+            >
+              <div className="dash-metric-chip" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7', borderColor: 'rgba(168, 85, 247, 0.25)' }}>
                 <LuStar />
               </div>
               <div className="dash-metric-info">
                 <span className="dash-metric-title">Recognition</span>
                 <span className="dash-metric-number">{userData?.achievementStars || 0}</span>
+                <span className="dash-metric-status-badge success">
+                  ✨ {userData?.achievementStars ? `${userData.achievementStars} Star${userData.achievementStars > 1 ? 's' : ''}` : 'Active Member'}
+                </span>
               </div>
-            </div>
-          </section>
+            </motion.div>
+          </motion.section>
 
           {/* Tab Content Panels Container */}
           <div className="dash-content-panel">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18 }}
+              >
 
       {/* ── Daily Streak Tab ── */}
       {activeTab === 'streak' && (() => {
@@ -1387,13 +1537,15 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Come back tomorrow to keep your streak alive.</div>
                 </div>
               ) : (
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.96 }}
                   onClick={handleDailyCheckin}
                   className="btn btn-primary"
-                  style={{ padding: '1rem 3rem', fontSize: '1.1rem', borderRadius: '14px', background: 'linear-gradient(135deg, #f97316, #eab308)', border: 'none', boxShadow: '0 8px 24px rgba(249,115,22,0.3)' }}
+                  style={{ padding: '0.95rem 2.75rem', minHeight: '48px', fontSize: '1.05rem', borderRadius: '14px', background: 'linear-gradient(135deg, #f97316, #eab308)', border: 'none', boxShadow: '0 8px 24px rgba(249,115,22,0.3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
                 >
                   <FiZap /> Check In Today
-                </button>
+                </motion.button>
               )}
             </div>
 
@@ -1569,6 +1721,241 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
         );
       })()}
 
+      {/* ── INBOUND CLIENT JOB OFFERS (from TEC Space) ── */}
+      {activeTab === 'offers' && (
+        <div className="glass-panel" style={{ padding: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.75rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <h2 style={{ margin: 0 }}>Client Job Offers & Proposals</h2>
+                <span style={{ 
+                  background: 'rgba(79, 70, 229, 0.12)', 
+                  color: 'var(--primary)', 
+                  padding: '2px 10px', 
+                  borderRadius: '999px', 
+                  fontSize: '0.8rem', 
+                  fontWeight: 700 
+                }}>
+                  {inboundOffers.length} {inboundOffers.length === 1 ? 'Proposal' : 'Proposals'}
+                </span>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: '0.35rem 0 0' }}>
+                Direct project inquiries and contract offers submitted by external clients through your public TEC Space profile.
+              </p>
+            </div>
+
+            <Link 
+              to="/space" 
+              target="_blank" 
+              className="btn btn-secondary tec-nav-btn"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
+            >
+              <LuBriefcase size={15} />
+              <span>View Public Directory</span>
+            </Link>
+          </div>
+
+          {/* Quick Metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            <div style={{ padding: '1rem 1.25rem', background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: '14px' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>Pending Review</span>
+              <h3 style={{ fontSize: '1.6rem', margin: '0.25rem 0 0', color: 'var(--primary)', fontWeight: 800 }}>
+                {inboundOffers.filter(o => o.status === 'pending').length}
+              </h3>
+            </div>
+            <div style={{ padding: '1rem 1.25rem', background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: '14px' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>In Discussion / Accepted</span>
+              <h3 style={{ fontSize: '1.6rem', margin: '0.25rem 0 0', color: '#0f766e', fontWeight: 800 }}>
+                {inboundOffers.filter(o => o.status === 'accepted' || o.status === 'contacted').length}
+              </h3>
+            </div>
+            <div style={{ padding: '1rem 1.25rem', background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: '14px' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>Total Inquiries</span>
+              <h3 style={{ fontSize: '1.6rem', margin: '0.25rem 0 0', color: 'var(--text-main)', fontWeight: 800 }}>
+                {inboundOffers.length}
+              </h3>
+            </div>
+          </div>
+
+          {/* Offers List */}
+          {inboundOffers.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'var(--bg-main)', border: '1px dashed var(--border)', borderRadius: '16px' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', fontSize: '1.5rem' }}>
+                <LuBriefcase />
+              </div>
+              <h3 style={{ fontSize: '1.15rem', margin: '0 0 0.5rem' }}>No client offers received yet</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', maxWidth: '440px', margin: '0 auto 1.5rem', lineHeight: 1.5 }}>
+                Ensure your specializations and skills are populated in your Profile settings and that "Open to Job Offers" is enabled so prospective clients can discover you!
+              </p>
+              <button 
+                type="button" 
+                className="btn btn-primary"
+                onClick={() => setActiveTab('profile')}
+              >
+                Update Profile & Skills
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {inboundOffers.map((offer) => {
+                const isPending = offer.status === 'pending';
+                const isAccepted = offer.status === 'accepted';
+                const isDeclined = offer.status === 'declined';
+                const isContacted = offer.status === 'contacted';
+
+                const formattedDate = offer.createdAt?.toDate 
+                  ? offer.createdAt.toDate().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                  : 'Recent proposal';
+
+                return (
+                  <div 
+                    key={offer.id}
+                    style={{
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '16px',
+                      padding: '1.5rem',
+                      transition: 'border-color 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+                          <span style={{ 
+                            fontSize: '0.72rem', 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '0.04em', 
+                            padding: '2px 8px', 
+                            borderRadius: '6px', 
+                            background: 'rgba(79, 70, 229, 0.1)', 
+                            color: 'var(--primary)', 
+                            fontWeight: 700 
+                          }}>
+                            {offer.offerType || 'Freelance / Contract'}
+                          </span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            • {formattedDate}
+                          </span>
+                        </div>
+                        <h3 style={{ margin: '0 0 0.35rem', fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                          {offer.projectTitle}
+                        </h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                          <span>From: <strong>{offer.clientName}</strong></span>
+                          {offer.clientCompany && <span>({offer.clientCompany})</span>}
+                          <span>•</span>
+                          <span>Budget: <strong style={{ color: 'var(--primary)' }}>{offer.budget}</strong></span>
+                          <span>•</span>
+                          <span>Timeline: <strong>{offer.timeline}</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Status Chip */}
+                      <div>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.3rem 0.75rem',
+                          borderRadius: '999px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          background: isPending ? 'rgba(245, 158, 11, 0.12)' : isAccepted || isContacted ? 'rgba(15, 118, 110, 0.12)' : 'rgba(239, 68, 68, 0.1)',
+                          color: isPending ? 'var(--warning)' : isAccepted || isContacted ? '#0f766e' : 'var(--danger)',
+                          border: `1px solid ${isPending ? 'rgba(245, 158, 11, 0.3)' : isAccepted || isContacted ? 'rgba(15, 118, 110, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                        }}>
+                          {isPending ? '⏳ Awaiting Your Response' : isContacted ? '💬 Client Contacted' : isAccepted ? '✓ Offer Accepted' : '✕ Declined'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Scope / Description */}
+                    <div style={{ 
+                      padding: '1rem', 
+                      background: 'var(--bg-card)', 
+                      borderRadius: '10px', 
+                      border: '1px solid var(--border)',
+                      fontSize: '0.88rem',
+                      lineHeight: 1.6,
+                      color: 'var(--text-main)',
+                      marginBottom: '1.25rem',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {offer.scope}
+                    </div>
+
+                    {/* Actions & Client Comms */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                        {offer.clientEmail && (
+                          <a
+                            href={`mailto:${offer.clientEmail}?subject=${encodeURIComponent(`Re: ${offer.projectTitle} (TEC Space Offer)`)}`}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
+                          >
+                            ✉️ Reply via Email
+                          </a>
+                        )}
+                        {offer.clientPhone && (
+                          <a
+                            href={`https://wa.me/${normalizeWhatsApp(offer.clientPhone)}?text=${encodeURIComponent(`Hi ${offer.clientName}, I saw your job offer for "${offer.projectTitle}" on TEC Space!`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none', color: '#16a34a', borderColor: '#16a34a' }}
+                          >
+                            💬 Chat on WhatsApp
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Status toggle actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {!isContacted && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateOfferStatus(offer.id, 'contacted')}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
+                          >
+                            Mark Contacted
+                          </button>
+                        )}
+                        {!isAccepted && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateOfferStatus(offer.id, 'accepted')}
+                            className="btn btn-primary"
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
+                          >
+                            Accept Offer
+                          </button>
+                        )}
+                        {!isDeclined && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateOfferStatus(offer.id, 'declined')}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', color: 'var(--danger)' }}
+                          >
+                            Decline
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── FEATURED PORTFOLIO & WORKS (TEC Space Showcase) ── */}
+      {activeTab === 'portfolio' && (
+        <PortfolioManager user={user} userData={userData} />
+      )}
+
       {activeTab === 'profile' && (
         <div className="glass-panel" style={{ padding: '2rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
@@ -1717,6 +2104,58 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
               </button>
             </div>
 
+            {/* ── TEC Space Public Showcase Setting ── */}
+            <div style={{
+              margin: '1.75rem 0',
+              padding: '1.25rem 1.5rem',
+              borderRadius: '14px',
+              background: 'rgba(79, 70, 229, 0.05)',
+              border: '1px solid rgba(79, 70, 229, 0.2)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                      TEC Space Talent Directory
+                    </h4>
+                    <span style={{ 
+                      fontSize: '0.72rem', 
+                      background: availableForHire ? 'rgba(15, 118, 110, 0.15)' : 'rgba(239, 68, 68, 0.1)', 
+                      color: availableForHire ? '#0f766e' : 'var(--danger)', 
+                      padding: '2px 8px', 
+                      borderRadius: '10px', 
+                      fontWeight: 700 
+                    }}>
+                      {availableForHire ? 'Listed on TEC Space' : 'Hidden from Directory'}
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)', maxWidth: '540px', lineHeight: 1.5 }}>
+                    Showcase your profile, skills, and verified execution stats on the public <Link to="/space" target="_blank" style={{ color: 'var(--primary)', fontWeight: 600 }}>TEC Space portal</Link> so external clients and founders can reach out with direct job proposals.
+                  </p>
+                  <div style={{ marginTop: '0.65rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('portfolio')}
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <LuLayers size={13} />
+                      <span>Manage Featured Works ({userData?.portfolioWorks?.length || 0}/6) →</span>
+                    </button>
+                  </div>
+                </div>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={availableForHire}
+                    onChange={(e) => setAvailableForHire(e.target.checked)}
+                    style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                  />
+                  <span>Open to Job Offers</span>
+                </label>
+              </div>
+            </div>
+
             <button type="submit" className="btn btn-primary"><FiSave /> Save Profile</button>
           </form>
 
@@ -1764,22 +2203,28 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
               onGoalsUpdated={(newTasks) => setTasks(newTasks)}
             />
           ) : (
-            <div className="glass-panel" style={{ padding: '3rem 2rem', textAlign: 'center', borderRadius: '16px' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤝</div>
-              <h2 style={{ marginBottom: '0.5rem' }}>Peer Goal Suggestion Cycle Active</h2>
-              <p style={{ color: 'var(--text-secondary)', maxWidth: '580px', margin: '0 auto 1.5rem', lineHeight: '1.6' }}>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="glass-panel"
+              style={{ padding: '2.75rem 2rem', textAlign: 'center', borderRadius: '16px', border: '1px solid var(--border)' }}
+            >
+              <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🤝</div>
+              <h2 style={{ marginBottom: '0.5rem', fontSize: '1.35rem', fontWeight: 800 }}>Peer Goal Suggestion Cycle Active</h2>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '580px', margin: '0 auto 1.5rem', lineHeight: '1.6', fontSize: '0.92rem' }}>
                 For this cycle (<strong>{currentWeekId}</strong>), goals are collaboratively suggested by peers. 
                 First, suggest 1 goal for every member in your space on the <strong>Members Page</strong>. Then, open your <strong>Goals Inbox</strong> to choose at least 2 goals to activate your Kanban board!
               </p>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-                <Link to="/members" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
-                  1. View Members &amp; Assign Goals
+                <Link to="/members" className="btn btn-secondary" style={{ padding: '0.75rem 1.5rem', minHeight: '44px', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <LuUsers size={16} /> 1. View Members &amp; Assign Goals
                 </Link>
-                <Link to="/goals-inbox" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem' }}>
-                  2. Open Goals Inbox &amp; Commit
+                <Link to="/goals-inbox" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', minHeight: '44px', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <LuInbox size={16} /> 2. Open Goals Inbox &amp; Commit
                 </Link>
               </div>
-            </div>
+            </motion.div>
           )
         ) : (
         <div className="dash-goals-panel printable" style={{ opacity: isLockedOut ? 0.5 : 1, pointerEvents: isLockedOut ? 'none' : 'auto' }}>
@@ -2014,8 +2459,8 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
                       {partnerTasks.length === 0 ? (
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>No goals set for this week yet.</p>
                       ) : (
-                        <div style={{ overflowX: 'auto' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                        <div className="tec-table-shell">
+                          <table>
                             <thead>
                               <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                                 <th style={{ padding: '0.5rem 0.75rem' }}>Task Description</th>
@@ -2033,11 +2478,7 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
                                     <span style={{ fontWeight: '500' }}>{task.description || '—'}</span>
                                   </td>
                                   <td style={{ padding: '0.75rem' }}>
-                                    <span style={{
-                                      padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
-                                      background: task.status === 'Completed' ? 'rgba(16,185,129,0.15)' : task.status === 'Not Completed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                                      color: task.status === 'Completed' ? '#10b981' : task.status === 'Not Completed' ? 'var(--danger)' : 'var(--warning)'
-                                    }}>
+                                    <span className={`tec-status-badge ${task.status === 'Completed' ? 'success' : task.status === 'Not Completed' ? 'danger' : 'warning'}`}>
                                       {task.status || 'Pending'}
                                     </span>
                                   </td>
@@ -2068,6 +2509,8 @@ export default function Dashboard({ user, userData, isMobileSidebarOpen: externa
           )}
         </div>
       )}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </main>
       </div>

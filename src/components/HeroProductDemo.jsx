@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { LuPause, LuPlay } from 'react-icons/lu';
 import './heroProductDemo.css';
 
 const TYPE_TEXT = 'Ship portfolio update';
@@ -7,6 +8,7 @@ const TYPE_TEXT = 'Ship portfolio update';
  * Animated hero product demo (make.com style).
  * A ghost cursor walks through the TEC weekly ritual inside a browser window:
  * add a goal, type it, submit, attach proof, get verified, earn points. Loops forever.
+ * Users can pause to inspect the board at their own pace.
  */
 export default function HeroProductDemo() {
   const stageRef = useRef(null);
@@ -23,6 +25,22 @@ export default function HeroProductDemo() {
   const [proofChip, setProofChip] = useState(false);
   const [verified, setVerified] = useState(false);
   const [toast, setToast] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  const togglePause = () => {
+    setIsPaused((prev) => {
+      const next = !prev;
+      if (next) {
+        // Freeze in the completed, verified inspection state so all details can be read comfortably
+        setTyped(TYPE_TEXT);
+        setNewGoal(true);
+        setProofChip(true);
+        setVerified(true);
+        setToast(false);
+      }
+      return next;
+    });
+  };
 
   const moveCursorTo = (el, fallback) => {
     if (el && stageRef.current) {
@@ -45,6 +63,10 @@ export default function HeroProductDemo() {
       setProofChip(true);
       setVerified(true);
       setToast(true);
+      return;
+    }
+
+    if (isPaused) {
       return;
     }
 
@@ -126,20 +148,32 @@ export default function HeroProductDemo() {
       timers.forEach(clearTimeout);
       if (typing) clearInterval(typing);
     };
-  }, []);
+  }, [isPaused]);
 
   const newGoalStatus = verified ? 'verified' : proofChip ? 'review' : 'progress';
   const newGoalLabel = verified ? 'Verified' : proofChip ? 'In review' : 'In progress';
 
   return (
-    <div className="tpd-stage" ref={stageRef} aria-hidden="true">
-      <div className="tpd-glow" />
+    <div className="tpd-stage" ref={stageRef}>
+      <div className="tpd-glow" aria-hidden="true" />
 
       <div className="tpd-window">
         <div className="tpd-titlebar">
-          <span className="tpd-dots"><i /><i /><i /></span>
+          <span className="tpd-dots" aria-hidden="true"><i /><i /><i /></span>
           <span className="tpd-title">TEC Weekly · Execution Board</span>
-          <span className="tpd-weekchip">Week 38</span>
+          <div className="tpd-titlebar-actions">
+            <button
+              type="button"
+              className={`tpd-pause-btn ${isPaused ? 'paused' : ''}`}
+              onClick={togglePause}
+              title={isPaused ? "Resume demo animation" : "Pause to inspect board"}
+              aria-label={isPaused ? "Resume demo animation" : "Pause to inspect board"}
+            >
+              {isPaused ? <LuPlay size={10} /> : <LuPause size={10} />}
+              <span>{isPaused ? 'Resume' : 'Pause'}</span>
+            </button>
+            <span className="tpd-weekchip">Week 38</span>
+          </div>
         </div>
 
         <div className="tpd-header">
@@ -205,8 +239,9 @@ export default function HeroProductDemo() {
       </div>
 
       <div
-        className={clicked ? 'tpd-cursor click' : 'tpd-cursor'}
+        className={`tpd-cursor ${clicked ? 'click' : ''} ${isPaused ? 'paused' : ''}`}
         style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+        aria-hidden="true"
       >
         <span className="tpd-ripple" />
         <svg width="22" height="22" viewBox="0 0 24 24">

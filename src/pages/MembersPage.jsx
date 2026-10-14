@@ -135,6 +135,17 @@ export default function MembersPage({ user, userData }) {
     setStatusMsg('');
   };
 
+  // Close modal on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && modalOpen) {
+        handleCloseModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modalOpen]);
+
   // Submit / Update goal suggestion
   const handleSubmitSuggestion = async (e) => {
     e.preventDefault();

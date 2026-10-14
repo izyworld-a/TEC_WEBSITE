@@ -12,7 +12,7 @@
   --admin-bg-card: #ffffff;
   --admin-bg-card-hover: #f8fafc;
   --admin-bg-input: #f1f5f9;
-  --admin-table-head-bg: #f8fafc;
+  --admin-table-head-bg: #f7f7fb;
   --admin-row-hover: rgba(0, 0, 0, 0.02);
   --admin-segment-active: #ffffff;
   --admin-card-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
@@ -23,13 +23,13 @@
   /* TEC Official Brand Accents */
   --tec-brand-violet: #4f46e5;
   --tec-brand-violet-hover: #4338ca;
-  --tec-brand-emerald: #0f9f6e;
-  --tec-brand-gold: #d97706;
+  --tec-brand-emerald: #0f766e;
+  --tec-brand-gold: #b45309;
   --tec-brand-blue: #2563eb;
   --tec-brand-teal: #0d9488;
-  --tec-brand-coral: #dc2626;
+  --tec-brand-coral: #b91c1c;
 
-  --admin-text-main: #0f172a;
+  --admin-text-main: #172033;
   --admin-text-secondary: #475569;
   --admin-text-muted: #94a3b8;
 }
@@ -403,6 +403,36 @@
   transform: none;
 }
 
+.admin-btn-run.success {
+  background: linear-gradient(135deg, #0d9488, #0f766e) !important;
+  box-shadow: 0 2px 6px rgba(15, 118, 110, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.admin-btn-run.success:hover {
+  background: linear-gradient(135deg, #0f766e, #115e59) !important;
+}
+
+.admin-btn-run.warning {
+  background: linear-gradient(135deg, #d97706, #b45309) !important;
+  box-shadow: 0 2px 6px rgba(180, 83, 9, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.admin-btn-run.warning:hover {
+  background: linear-gradient(135deg, #b45309, #92400e) !important;
+}
+
+.admin-btn-run.danger {
+  background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+  box-shadow: 0 2px 6px rgba(185, 28, 28, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.admin-btn-run.danger:hover {
+  background: linear-gradient(135deg, #b91c1c, #991b1b) !important;
+}
+
 /* ── MAIN CONTENT AREA ──────────────────────────────────────────────────── */
 .admin-main {
   flex: 1;
@@ -624,20 +654,27 @@
 
 /* ── DATA TABLE ─────────────────────────────────────────────────────────── */
 .admin-table-container {
+  position: relative;
+  width: 100%;
   overflow-x: auto;
   border-radius: 10px;
   border: 1px solid var(--admin-border-subtle);
+  background: var(--admin-bg-card);
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
 .admin-table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   text-align: left;
   font-size: 0.875rem;
 }
 
 .admin-table th {
+  position: sticky;
+  top: 0;
   background: var(--admin-table-head-bg);
   color: var(--admin-text-secondary);
   font-weight: 600;
@@ -647,6 +684,7 @@
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--admin-border-subtle);
   white-space: nowrap;
+  z-index: 2;
 }
 
 .admin-table td {
@@ -714,29 +752,37 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.25rem 0.65rem;
+  padding: 0.22rem 0.65rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1.3;
   white-space: nowrap;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
 }
 
-.admin-status-pill.active {
-  background: rgba(16, 185, 129, 0.12);
+.admin-status-pill.active,
+.admin-status-pill.completed,
+.admin-status-pill.verified {
+  background: rgba(15, 118, 110, 0.12);
   color: var(--tec-brand-emerald);
-  border: 1px solid rgba(16, 185, 129, 0.28);
+  border: 1px solid rgba(15, 118, 110, 0.28);
 }
 
-.admin-status-pill.suspended {
-  background: rgba(239, 68, 68, 0.12);
+.admin-status-pill.suspended,
+.admin-status-pill.rejected {
+  background: rgba(185, 28, 28, 0.12);
   color: var(--tec-brand-coral);
-  border: 1px solid rgba(239, 68, 68, 0.28);
+  border: 1px solid rgba(185, 28, 28, 0.28);
 }
 
-.admin-status-pill.warning {
-  background: rgba(245, 158, 11, 0.12);
+.admin-status-pill.warning,
+.admin-status-pill.pending,
+.admin-status-pill.review {
+  background: rgba(180, 83, 9, 0.12);
   color: var(--tec-brand-gold);
-  border: 1px solid rgba(245, 158, 11, 0.28);
+  border: 1px solid rgba(180, 83, 9, 0.28);
 }
 
 .admin-status-pill.break {
@@ -749,6 +795,47 @@
   background: rgba(168, 85, 247, 0.12);
   color: #a855f7;
   border: 1px solid rgba(168, 85, 247, 0.28);
+}
+
+.admin-status-pill.subtle {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--admin-text-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+[data-theme='dark'] .admin-status-pill.active,
+[data-theme='dark'] .admin-status-pill.completed,
+[data-theme='dark'] .admin-status-pill.verified {
+  background: rgba(20, 184, 166, 0.16);
+  color: #2dd4bf;
+  border-color: rgba(20, 184, 166, 0.35);
+}
+
+[data-theme='dark'] .admin-status-pill.suspended,
+[data-theme='dark'] .admin-status-pill.rejected {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+[data-theme='dark'] .admin-status-pill.warning,
+[data-theme='dark'] .admin-status-pill.pending,
+[data-theme='dark'] .admin-status-pill.review {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+[data-theme='dark'] .admin-status-pill.break {
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+[data-theme='dark'] .admin-status-pill.hold {
+  background: rgba(168, 85, 247, 0.16);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.35);
 }
 
 /* ── ACTION DROPDOWN POPOVER ────────────────────────────────────────────── */
@@ -834,13 +921,15 @@
 .admin-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  animation: adminModalFadeIn 0.2s ease-out;
 }
 
 .admin-modal {
@@ -849,8 +938,19 @@
   border-radius: 16px;
   width: 100%;
   max-width: 480px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
   padding: 1.5rem;
+  animation: adminModalScaleUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes adminModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes adminModalScaleUp {
+  from { opacity: 0; transform: scale(0.95) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .admin-modal-header {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { doc, onSnapshot, collection, query, orderBy } from 'firebase/firestore';
@@ -190,6 +191,7 @@ export default function Navbar({ user, userData, isDashboardSidebarOpen, onToggl
               <a href="#overview">Overview</a>
               <a href="#system">Workflow</a>
               <a href="#features">Features</a>
+              <Link to="/space" style={{ color: 'var(--primary)', fontWeight: '700' }}>TEC Space</Link>
               <a href="#contact">Contact</a>
             </div>
 
@@ -219,52 +221,63 @@ export default function Navbar({ user, userData, isDashboardSidebarOpen, onToggl
                   <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', background: 'var(--danger)', borderRadius: '50%', border: '2px solid var(--bg-main)' }}></span>
                 )}
 
-                {showNotifications && (
-                  <div className="glass-panel notification-dropdown" style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: '-10px',
-                    marginTop: '1rem',
-                    width: '320px',
-                    padding: '1.5rem',
-                    zIndex: 1001,
-                    backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
-                    border: '1px solid var(--border)',
-                    boxShadow: '0 15px 50px rgba(0,0,0,0.3)',
-                    cursor: 'default',
-                    overflowY: 'auto',
-                    maxHeight: '80vh'
-                  }} onClick={(e) => e.stopPropagation()}>
-                    <h4 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', fontWeight: 'bold' }}>Active Deadlines</h4>
+                <AnimatePresence>
+                  {showNotifications && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      transition={{ duration: 0.18 }}
+                      className="glass-panel notification-dropdown" 
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: '-10px',
+                        marginTop: '1rem',
+                        width: '320px',
+                        padding: '1.5rem',
+                        zIndex: 1001,
+                        backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                        backdropFilter: 'blur(16px)',
+                        WebkitBackdropFilter: 'blur(16px)',
+                        border: '1px solid var(--border)',
+                        boxShadow: '0 15px 50px rgba(0,0,0,0.3)',
+                        cursor: 'default',
+                        overflowY: 'auto',
+                        maxHeight: '80vh',
+                        borderRadius: '16px'
+                      }} 
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h4 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', fontWeight: 'bold' }}>Active Deadlines</h4>
 
-                    {!timeLeft.setup && !timeLeft.completion ? (
-                      <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '1rem 0' }}>No active deadlines for this week.</div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {timeLeft.setup && (
-                          <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--primary)' }}>
-                              <FiClock size={16} />
-                              <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Goal Setting</span>
+                      {!timeLeft.setup && !timeLeft.completion ? (
+                        <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '1rem 0' }}>No active deadlines for this week.</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          {timeLeft.setup && (
+                            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--primary)' }}>
+                                <FiClock size={16} />
+                                <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Goal Setting</span>
+                              </div>
+                              <div style={{ fontWeight: 'bold', fontSize: '1.2rem', fontFamily: 'monospace', color: timeLeft.setup === 'EXPIRED' ? '#f43f5e' : 'var(--text-main)' }}>{timeLeft.setup}</div>
                             </div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1.2rem', fontFamily: 'monospace', color: timeLeft.setup === 'EXPIRED' ? '#f43f5e' : 'var(--text-main)' }}>{timeLeft.setup}</div>
-                          </div>
-                        )}
-                        {timeLeft.completion && (
-                          <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--secondary)' }}>
-                              <FiClock size={16} />
-                              <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weekly Completion</span>
+                          )}
+                          {timeLeft.completion && (
+                            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--secondary)' }}>
+                                <FiClock size={16} />
+                                <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weekly Completion</span>
+                              </div>
+                              <div style={{ fontWeight: 'bold', fontSize: '1.2rem', fontFamily: 'monospace', color: timeLeft.completion === 'EXPIRED' ? '#f43f5e' : 'var(--text-main)' }}>{timeLeft.completion}</div>
                             </div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1.2rem', fontFamily: 'monospace', color: timeLeft.completion === 'EXPIRED' ? '#f43f5e' : 'var(--text-main)' }}>{timeLeft.completion}</div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
 
@@ -303,15 +316,23 @@ export default function Navbar({ user, userData, isDashboardSidebarOpen, onToggl
 
             {/* Authenticated Links & Sign Out Button (hidden on /dashboard where sidebar exists) */}
             {user && !isDashboard ? (
-              <div className="desktop-only tec-nav-actions" style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+              <div className="desktop-only tec-nav-actions" style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                {(userData?.isAdmin || userData?.status !== 'Pending') && (
+                  <Link to="/dashboard" className={`btn ${location.pathname === '/dashboard' ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>Dashboard</Link>
+                )}
+                <Link to="/livefeed" className={`btn ${location.pathname === '/livefeed' ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>Live Feed</Link>
+                <Link to="/space" className={`btn ${location.pathname === '/space' ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>TEC Space</Link>
+                {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && (
+                  <Link to="/members" className={`btn ${location.pathname === '/members' ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>Members</Link>
+                )}
+                {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && (
+                  <Link to="/goals-inbox" className={`btn ${location.pathname === '/goals-inbox' ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>Inbox</Link>
+                )}
                 {userData?.isAdmin && (
-                  <Link to="/admin" className="btn btn-secondary tec-nav-btn">Admin</Link>
+                  <Link to="/admin" className={`btn ${location.pathname.startsWith('/admin') ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>Admin</Link>
                 )}
                 {userData?.isModerator && (
                   <Link to="/moderator" className="btn btn-secondary tec-nav-btn" style={{ background: 'rgba(168,85,247,0.15)', borderColor: '#a855f7', color: '#a855f7' }}>Moderator</Link>
-                )}
-                {(userData?.isAdmin || userData?.status !== 'Pending') && (
-                  <Link to="/dashboard" className="btn btn-secondary tec-nav-btn">Dashboard</Link>
                 )}
 
                 {/* Profile-integrated Logout / Sign Out Button */}
@@ -335,6 +356,7 @@ export default function Navbar({ user, userData, isDashboardSidebarOpen, onToggl
               /* Non-authenticated Auth Route Buttons (e.g. /login, /register) */
               <div className="desktop-only" style={{ display: 'flex', gap: '0.35rem' }}>
                 <Link to="/" className="btn btn-secondary tec-nav-btn">Home</Link>
+                <Link to="/space" className={`btn ${location.pathname === '/space' ? 'btn-primary' : 'btn-secondary'} tec-nav-btn`}>TEC Space</Link>
                 {location.pathname !== '/login' && <Link to="/login" className="btn btn-secondary tec-nav-btn">Login</Link>}
                 {location.pathname !== '/register' && <Link to="/register" className="btn btn-primary tec-nav-btn">Sign Up</Link>}
               </div>
@@ -362,58 +384,69 @@ export default function Navbar({ user, userData, isDashboardSidebarOpen, onToggl
         )}
 
         {/* ── Mobile Menu Dropdown (Only for non-dashboard pages) ── */}
-        {isMobileMenuOpen && !isDashboard && (
-          <div className="mobile-nav-dropdown glass-panel">
-            {isHome ? (
-              <>
-                <a href="#overview" onClick={() => setIsMobileMenuOpen(false)}>Overview</a>
-                <a href="#system" onClick={() => setIsMobileMenuOpen(false)}>Workflow</a>
-                <a href="#features" onClick={() => setIsMobileMenuOpen(false)}>Features</a>
-                <a href="#contact" onClick={() => setIsMobileMenuOpen(false)}>Contact</a>
-              </>
-            ) : user ? (
-              <>
-                {(userData?.isAdmin || userData?.status !== 'Pending') && <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Dashboard</Link>}
-                {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/members" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Members</Link>}
-                {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/goals-inbox" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Goals Inbox</Link>}
-                <Link to="/livefeed" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Live Feed</Link>
-                {userData?.isAdmin && <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Admin</Link>}
-                {userData?.isModerator && <Link to="/moderator" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: '#a855f7', fontWeight: 'bold' }}>Moderator</Link>}
-                {installPrompt && !isInstalled && (
-                  <button
-                    onClick={() => { handleInstall(); setIsMobileMenuOpen(false); }}
-                    style={{
-                      margin: '0.25rem 1rem',
-                      padding: '0.75rem 1rem',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                      border: 'none',
-                      color: 'white',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      fontSize: '1rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      boxShadow: '0 2px 12px rgba(99,102,241,0.4)'
-                    }}
-                  >
-                    <FiDownload size={18} /> Install App
+        <AnimatePresence>
+          {isMobileMenuOpen && !isDashboard && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.18 }}
+              className="mobile-nav-dropdown glass-panel"
+            >
+              {isHome ? (
+                <>
+                  <a href="#overview" onClick={() => setIsMobileMenuOpen(false)}>Overview</a>
+                  <a href="#system" onClick={() => setIsMobileMenuOpen(false)}>Workflow</a>
+                  <a href="#features" onClick={() => setIsMobileMenuOpen(false)}>Features</a>
+                  <Link to="/space" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.5rem 0', color: 'var(--primary)', fontWeight: 'bold' }}>TEC Space (Talent)</Link>
+                  <a href="#contact" onClick={() => setIsMobileMenuOpen(false)}>Contact</a>
+                </>
+              ) : user ? (
+                <>
+                  {(userData?.isAdmin || userData?.status !== 'Pending') && <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Dashboard</Link>}
+                  <Link to="/livefeed" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Live Feed</Link>
+                  <Link to="/space" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>TEC Space</Link>
+                  {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/members" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Members</Link>}
+                  {Boolean(weekSettings?.peerGoalsEnabled ?? systemSettings?.peerGoalsEnabled) && userData?.status !== 'Pending' && <Link to="/goals-inbox" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Goals Inbox</Link>}
+                  {userData?.isAdmin && <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Admin</Link>}
+                  {userData?.isModerator && <Link to="/moderator" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: '#a855f7', fontWeight: 'bold' }}>Moderator</Link>}
+                  {installPrompt && !isInstalled && (
+                    <button
+                      onClick={() => { handleInstall(); setIsMobileMenuOpen(false); }}
+                      style={{
+                        margin: '0.25rem 1rem',
+                        padding: '0.75rem 1rem',
+                        borderRadius: '12px',
+                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                        border: 'none',
+                        color: 'white',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 2px 12px rgba(99,102,241,0.4)'
+                      }}
+                    >
+                      <FiDownload size={18} /> Install App
+                    </button>
+                  )}
+                  <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <FiLogOut size={18} /> Sign Out
                   </button>
-                )}
-                <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <FiLogOut size={18} /> Sign Out
-                </button>
-              </>
-            ) : (
-              <>
-                <Link to="/" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Home</Link>
-                <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Login</Link>
-                <Link to="/register" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'var(--primary)', fontWeight: 'bold' }}>Sign Up</Link>
-              </>
-            )}
-          </div>
-        )}
+                </>
+              ) : (
+                <>
+                  <Link to="/" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Home</Link>
+                  <Link to="/space" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'var(--primary)', fontWeight: 'bold' }}>TEC Space</Link>
+                  <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'inherit', fontWeight: 'bold' }}>Login</Link>
+                  <Link to="/register" onClick={() => setIsMobileMenuOpen(false)} style={{ padding: '0.75rem 1rem', textDecoration: 'none', color: 'var(--primary)', fontWeight: 'bold' }}>Sign Up</Link>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
       {/* ── Announcement Marquee Ticker (LiveFeed only) ── */}

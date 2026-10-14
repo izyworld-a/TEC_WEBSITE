@@ -154,18 +154,14 @@ export default function ModeratorDashboard({ user, userData }) {
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Week: {g.weekId}</div>
                   </div>
                 </div>
-                <span style={{
-                  padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
-                  background: g.reviewStatus === 'mod_reviewed' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                  color: g.reviewStatus === 'mod_reviewed' ? '#10b981' : 'var(--warning)'
-                }}>
+                <span className={`tec-status-badge ${g.reviewStatus === 'mod_reviewed' ? 'success' : 'warning'}`}>
                   {g.reviewStatus === 'mod_reviewed' ? '✓ Mod Reviewed' : '⏳ In Review'}
                 </span>
               </div>
 
               {/* Tasks */}
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div className="tec-table-shell">
+                <table>
                   <thead>
                     <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
                       <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Task</th>
@@ -179,11 +175,7 @@ export default function ModeratorDashboard({ user, userData }) {
                       <tr key={idx} style={{ borderBottom: '1px solid var(--border)', opacity: task.reviewed ? 0.55 : 1 }}>
                         <td style={{ padding: '0.75rem 1rem', maxWidth: '260px', fontSize: '0.875rem' }}>{task.description || '—'}</td>
                         <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{
-                            padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
-                            background: task.status === 'Completed' ? 'rgba(16,185,129,0.15)' : task.status === 'Not Completed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                            color: task.status === 'Completed' ? '#10b981' : task.status === 'Not Completed' ? 'var(--danger)' : 'var(--warning)'
-                          }}>
+                          <span className={`tec-status-badge ${task.status === 'Completed' ? 'success' : task.status === 'Not Completed' ? 'danger' : 'warning'}`}>
                             {task.status || 'Pending'}
                           </span>
                         </td>
@@ -199,12 +191,12 @@ export default function ModeratorDashboard({ user, userData }) {
                           {task.reviewed ? (
                             <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Admin locked</span>
                           ) : task.moderatorReviewed || task.moderatorAction === 'approved' ? (
-                            <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 'bold', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
+                            <span className="tec-status-badge success">
                               ✓ Approved by {task.moderatorName || 'Mod'}
                             </span>
                           ) : task.moderatorAction === 'rejected' ? (
                             <div>
-                              <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 'bold', background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', display: 'block', marginBottom: '0.3rem' }}>
+                              <span className="tec-status-badge danger" style={{ display: 'inline-flex', marginBottom: '0.3rem' }}>
                                 ✗ Rejected
                               </span>
                               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{task.rejectionReason}</span>

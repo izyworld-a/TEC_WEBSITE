@@ -22,7 +22,8 @@ export function uploadToCloudinary(file, folder = 'uploads', onProgress = null) 
     formData.append('folder', folder);
 
     const xhr = new XMLHttpRequest();
-    const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+    const resourceType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
+    const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`;
 
     xhr.open('POST', url, true);
 
@@ -54,4 +55,23 @@ export function uploadToCloudinary(file, folder = 'uploads', onProgress = null) 
 
     xhr.send(formData);
   });
+}
+
+/**
+ * Checks if a given media URL is a video.
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isVideoUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.split('?')[0].toLowerCase();
+  return (
+    clean.endsWith('.mp4') ||
+    clean.endsWith('.webm') ||
+    clean.endsWith('.mov') ||
+    clean.endsWith('.ogg') ||
+    clean.endsWith('.m4v') ||
+    clean.includes('/video/upload/') ||
+    (clean.includes('res.cloudinary.com') && clean.includes('/video/'))
+  );
 }

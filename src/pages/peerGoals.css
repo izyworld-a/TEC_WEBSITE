@@ -488,6 +488,13 @@
   min-height: 480px;
   display: flex;
   flex-direction: column;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kanban-column.is-dragging-over {
+  border-color: var(--primary) !important;
+  background: rgba(99, 102, 241, 0.04) !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
 .kanban-column-header {
@@ -536,12 +543,38 @@
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  cursor: grab;
+  user-select: none;
+}
+
+.kanban-card:active {
+  cursor: grabbing;
 }
 
 .kanban-card:hover {
-  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.35);
   box-shadow: var(--shadow-md);
+}
+
+.kanban-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  margin: auto 0;
+  background: rgba(0, 0, 0, 0.015);
+}
+
+[data-theme='dark'] .kanban-empty-state {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .kanban-card-title {

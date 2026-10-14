@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot, where, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser, FiDollarSign, FiTrash2, FiGift } from 'react-icons/fi';
+import { FiTarget, FiAward, FiTrendingUp, FiClock, FiAlertCircle, FiUsers, FiActivity, FiPieChart, FiZap, FiSearch, FiBell, FiSun, FiMenu, FiStar, FiCheckCircle, FiShield, FiUser, FiDollarSign, FiTrash2, FiGift, FiExternalLink, FiX, FiMaximize2 } from 'react-icons/fi';
 import { getWeekId } from '../utils/weekUtils';
 import { CircleStatusChip, LiveMetricCard, WeekIdentityChip } from '../components/ProductUI';
 import BirthdayModal from '../components/BirthdayModal';
+import './liveFeed.css';
 
 export default function LiveFeedPage({ user, userData }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -14,6 +16,7 @@ export default function LiveFeedPage({ user, userData }) {
   const [topPerformer, setTopPerformer] = useState(null);
   const [usersMap, setUsersMap] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
+  const [activeProofPreview, setActiveProofPreview] = useState(null);
   const [birthdayData, setBirthdayData] = useState(null);
   const [showBirthdayModal, setShowBirthdayModal] = useState(false);
   
@@ -157,6 +160,19 @@ export default function LiveFeedPage({ user, userData }) {
     }
   };
 
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (activeProofPreview) setActiveProofPreview(null);
+        else if (selectedUser) setSelectedUser(null);
+        else if (showPartnerModal) setShowPartnerModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeProofPreview, selectedUser, showPartnerModal]);
+
   // Listen to current user's pairing for this week
   useEffect(() => {
     if (!user?.uid) return;
@@ -297,15 +313,15 @@ export default function LiveFeedPage({ user, userData }) {
   };
 
   return (
-    <div className="tec-live-page" style={{ position: 'relative', minHeight: '100vh', width: '100%', padding: '0 2rem 4rem' }}>
+    <div className="tec-live-page tec-live-page-responsive">
       {/* Main Title Area */}
-      <div className="tec-live-heading" style={{ marginBottom: '2rem', marginTop: '2rem' }}>
+      <div className="tec-live-heading">
         <div className="tec-live-heading-chips">
           <CircleStatusChip>Live Execution Board</CircleStatusChip>
           <WeekIdentityChip weekId={selectedWeekId} mode="live" />
         </div>
-        <h2 style={{ fontSize: '2.5rem', fontWeight: '900', marginBottom: '0.5rem', letterSpacing: 0 }}>This week's receipts</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem' }}>See who declared, who submitted proof, and what still needs review.</p>
+        <h2 className="tec-live-title">This week's receipts</h2>
+        <p className="tec-live-subtitle">See who declared, who submitted proof, and what still needs review.</p>
       </div>
 
       {/* ── Active Birthday Celebration Banner ── */}
@@ -342,7 +358,7 @@ export default function LiveFeedPage({ user, userData }) {
       )}
 
       {/* Stats Section */}
-      <div className="tec-live-metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '3rem' }}>
+      <div className="tec-live-metrics-grid tec-live-metrics-grid-wrap">
         <LiveMetricCard
           label="Goals submitted"
           value={allGoals.length}
@@ -372,69 +388,90 @@ export default function LiveFeedPage({ user, userData }) {
         />
       </div>
       {/* ── Partner Assignment Popup ── */}
-      {myPairing && showPartnerModal && !partnerDismissed && !myPairing.teamRewarded && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-          zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
-        }}>
-          <div className="glass-panel" style={{
-            background: 'var(--bg-card)',
-            maxWidth: '440px', width: '100%', padding: '2.5rem 2rem',
-            borderRadius: '24px', textAlign: 'center', position: 'relative',
-            border: '1px solid rgba(99,102,241,0.4)',
-            boxShadow: '0 0 60px rgba(99,102,241,0.2)'
-          }}>
-            <button
-              onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
-              style={{ position: 'absolute', top: '1rem', right: '1.25rem', background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}
-            >&times;</button>
-
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤝</div>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '0.5rem' }}>You've Been Paired!</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              Your accountability partner{myPairing.userIds?.length > 2 ? 's are' : ' is'}:
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
-              {myPairing.userIds?.filter(id => id !== user?.uid).map((partnerId, i) => {
-                const partnerInfo = usersMap[partnerId];
-                const partnerName = myPairing.userNames?.[myPairing.userIds.indexOf(partnerId)] || partnerInfo?.name || 'Teammate';
-                return (
-                  <div key={partnerId} style={{
-                    display: 'flex', alignItems: 'center', gap: '1rem',
-                    background: 'rgba(99,102,241,0.1)', borderRadius: '14px',
-                    padding: '0.875rem 1.25rem', border: '1px solid rgba(99,102,241,0.2)'
-                  }}>
-                    {partnerInfo?.profilePicUrl ? (
-                      <img src={partnerInfo.profilePicUrl} alt={partnerName} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
-                    ) : (
-                      <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold', flexShrink: 0 }}>
-                        {partnerName.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontWeight: '700', fontSize: '1rem' }}>{partnerName}</div>
-                      {partnerInfo?.profession && <div style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>{partnerInfo.profession}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '12px', padding: '0.875rem 1rem', fontSize: '0.85rem', color: 'rgba(234,179,8,0.9)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              🏆 If you <strong>both</strong> rank in the <strong>Top 3</strong> to set and complete your goals this week, you each earn <strong>₦1,000!</strong>
-            </div>
-
-            <button
-              onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '0.875rem', fontWeight: '700', fontSize: '1rem' }}
+      <AnimatePresence>
+        {myPairing && showPartnerModal && !partnerDismissed && !myPairing.teamRewarded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+              backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+              zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+            }}
+            onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.94, opacity: 0, y: 15 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              onClick={e => e.stopPropagation()}
+              className="glass-panel"
+              style={{
+                background: 'var(--bg-card)',
+                maxWidth: '440px', width: '100%', padding: '2.5rem 2rem',
+                borderRadius: '24px', textAlign: 'center', position: 'relative',
+                border: '1px solid rgba(99,102,241,0.4)',
+                boxShadow: '0 0 60px rgba(99,102,241,0.2)'
+              }}
             >
-              Got it — Let's Go! 🚀
-            </button>
-          </div>
-        </div>
-      )}
+              <button
+                onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
+                style={{ position: 'absolute', top: '1rem', right: '1.25rem', background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                aria-label="Close"
+              >&times;</button>
+
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤝</div>
+              <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '0.5rem' }}>You've Been Paired!</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+                Your accountability partner{myPairing.userIds?.length > 2 ? 's are' : ' is'}:
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
+                {myPairing.userIds?.filter(id => id !== user?.uid).map((partnerId, i) => {
+                  const partnerInfo = usersMap[partnerId];
+                  const partnerName = myPairing.userNames?.[myPairing.userIds.indexOf(partnerId)] || partnerInfo?.name || 'Teammate';
+                  return (
+                    <div key={partnerId} style={{
+                      display: 'flex', alignItems: 'center', gap: '1rem',
+                      background: 'rgba(99,102,241,0.1)', borderRadius: '14px',
+                      padding: '0.875rem 1.25rem', border: '1px solid rgba(99,102,241,0.2)'
+                    }}>
+                      {partnerInfo?.profilePicUrl ? (
+                        <img src={partnerInfo.profilePicUrl} alt={partnerName} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
+                      ) : (
+                        <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold', flexShrink: 0 }}>
+                          {partnerName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontWeight: '700', fontSize: '1rem' }}>{partnerName}</div>
+                        {partnerInfo?.profession && <div style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>{partnerInfo.profession}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '12px', padding: '0.875rem 1rem', fontSize: '0.85rem', color: 'rgba(234,179,8,0.9)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+                🏆 If you <strong>both</strong> rank in the <strong>Top 3</strong> to set and complete your goals this week, you each earn <strong>₦1,000!</strong>
+              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => { setShowPartnerModal(false); setPartnerDismissed(true); }}
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '0.875rem', fontWeight: '700', fontSize: '1rem', cursor: 'pointer' }}
+              >
+                Got it — Let's Go! 🚀
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Team Rank & Reward Banner ── */}
       {(() => {
@@ -489,12 +526,17 @@ export default function LiveFeedPage({ user, userData }) {
         const partnerQualified = partnerRanks.every(r => r >= 1 && r <= 3);
 
         return (
-          <div style={{
-            background: allTop3 ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.03)',
-            border: allTop3 ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '16px', padding: '1rem 1.5rem', marginBottom: '2rem',
-            display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap'
-          }}>
+          <motion.div 
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              background: allTop3 ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.03)',
+              border: allTop3 ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '16px', padding: '1rem 1.5rem', marginBottom: '2rem',
+              display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap'
+            }}
+          >
             <div style={{
               width: '48px', height: '48px', borderRadius: '12px', flexShrink: 0,
               background: isQualified ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.05)',
@@ -524,16 +566,16 @@ export default function LiveFeedPage({ user, userData }) {
                 {isQualified ? '🏅 Top 3' : `#${myRank}`}
               </div>
             )}
-          </div>
+          </motion.div>
         );
       })()}
 
       {/* Deadlines Section (If Active) */}
       {(timeLeft.setup !== 'EXPIRED' || timeLeft.completion !== 'EXPIRED') && (
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '3rem' }}>
+        <div className="tec-live-deadlines-wrap">
           {timeLeft.setup && timeLeft.setup !== 'EXPIRED' && (
-            <div className="glass-panel" style={{ flex: 1, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid var(--primary)' }}>
-              <FiClock size={20} color="var(--primary)" />
+            <div className="glass-panel" style={{ flex: '1 1 260px', padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid var(--primary)', minWidth: 0 }}>
+              <FiClock size={20} color="var(--primary)" style={{ flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Goal Setting Deadline</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: '700', fontFamily: 'monospace' }}>{timeLeft.setup}</div>
@@ -541,8 +583,8 @@ export default function LiveFeedPage({ user, userData }) {
             </div>
           )}
           {timeLeft.completion && timeLeft.completion !== 'EXPIRED' && (
-            <div className="glass-panel" style={{ flex: 1, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid var(--secondary)' }}>
-              <FiClock size={20} color="var(--secondary)" />
+            <div className="glass-panel" style={{ flex: '1 1 260px', padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid var(--secondary)', minWidth: 0 }}>
+              <FiClock size={20} color="var(--secondary)" style={{ flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Weekly Completion Deadline</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: '700', fontFamily: 'monospace' }}>{timeLeft.completion}</div>
@@ -553,68 +595,54 @@ export default function LiveFeedPage({ user, userData }) {
       )}
 
       {/* Main Grid Layout */}
-      <div className="live-feed-layout">
+      <div className="live-feed-layout live-feed-layout-responsive">
         
         {/* Left Column: Activity Feed */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
+          <div className="live-feed-controls-bar">
             <div>
-              <h3 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '0.25rem' }}>Live Activity Feed</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Real-time updates from your team</p>
+              <h3 style={{ fontSize: '1.4rem', fontWeight: '700', marginBottom: '0.25rem' }}>Live Activity Feed</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>Real-time updates from your team</p>
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                background: 'rgba(255,255,255,0.05)', 
-                borderRadius: '12px', 
-                padding: '0.5rem 1rem', 
-                border: '1px solid rgba(255,255,255,0.1)', 
-                minWidth: '250px' 
-              }}>
-                <FiSearch style={{ color: 'var(--text-secondary)', marginRight: '0.75rem' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', width: '100%', maxWidth: '100%' }}>
+              <div className="live-feed-search-wrap">
+                <FiSearch style={{ color: 'var(--text-secondary)', marginRight: '0.75rem', flexShrink: 0 }} />
                 <input 
                   type="text" 
                   placeholder="Search users..." 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-main)', outline: 'none', width: '100%' }} 
                 />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="tec-live-week-nav">
                 <button 
                   onClick={handlePrevWeek} 
-                  className="btn btn-secondary" 
-                  style={{ padding: '0.5rem 1rem', borderRadius: '10px', fontSize: '0.9rem' }}
+                  className="btn btn-secondary week-nav-btn"
                 >
-                  ← Previous Week
+                  ← Prev
                 </button>
                 
-                <div style={{ padding: '0 1rem', fontWeight: '700', fontSize: '0.95rem', minWidth: '130px', textAlign: 'center' }}>
+                <div className="week-nav-label">
                   {selectedWeekId === currentWeekId ? 'Current Week' : selectedWeekId}
                 </div>
                 
                 <button 
                   onClick={handleNextWeek} 
                   disabled={selectedWeekId === currentWeekId}
-                  className="btn btn-secondary" 
+                  className="btn btn-secondary week-nav-btn"
                   style={{ 
-                    padding: '0.5rem 1rem', 
-                    borderRadius: '10px', 
-                    fontSize: '0.9rem',
                     opacity: selectedWeekId === currentWeekId ? 0.4 : 1,
                     cursor: selectedWeekId === currentWeekId ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  Next Week →
+                  Next →
                 </button>
                 
                 {selectedWeekId !== currentWeekId && (
                   <button 
                     onClick={handleCurrentWeek} 
-                    className="btn btn-primary" 
-                    style={{ padding: '0.5rem 1.25rem', borderRadius: '10px', fontSize: '0.9rem' }}
+                    className="btn btn-primary week-nav-btn"
                   >
                     Current
                   </button>
@@ -623,24 +651,36 @@ export default function LiveFeedPage({ user, userData }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {filteredFeed.length > 0 ? filteredFeed.map(goal => {
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
+          >
+            {filteredFeed.length > 0 ? filteredFeed.map((goal, idx) => {
               const userProfile = usersMap[goal.userId] || {};
               return (
-              <div key={goal.id} className="glass-panel" style={{ padding: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.5rem' }}>
+              <motion.div 
+                key={goal.id} 
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: Math.min(idx * 0.04, 0.3) }}
+                whileHover={{ y: -2, transition: { duration: 0.15 } }}
+                className="glass-panel live-feed-item-card" 
+              >
+                <div className="feed-card-header">
                   {/* Clickable Avatar */}
                   <div onClick={() => setSelectedUser({ ...userProfile, userName: goal.userName || userProfile.name || 'Member', userId: goal.userId, profilePicUrl: goal.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })} style={{ cursor: 'pointer', flexShrink: 0 }}>
                     {goal.profilePicUrl || userProfile.profilePicUrl ? (
-                      <img src={goal.profilePicUrl || userProfile.profilePicUrl} alt={goal.userName || userProfile.name} style={{ width: '52px', height: '52px', borderRadius: '12px', objectFit: 'cover', border: '2px solid var(--primary)' }} />
+                      <img src={goal.profilePicUrl || userProfile.profilePicUrl} alt={goal.userName || userProfile.name} style={{ width: '50px', height: '50px', borderRadius: '12px', objectFit: 'cover', border: '2px solid var(--primary)' }} />
                     ) : (
-                      <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                      <div style={{ width: '50px', height: '50px', borderRadius: '12px', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold' }}>
                         {(goal.userName || userProfile.name || 'M')?.charAt(0).toUpperCase()}
                       </div>
                     )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="feed-card-user-row">
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span onClick={() => setSelectedUser({ ...userProfile, userName: goal.userName || userProfile.name || 'Member', userId: goal.userId, profilePicUrl: goal.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })} style={{ fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', color: 'var(--text-main)' }}>{goal.userName || userProfile.name || 'Member'}</span>
@@ -651,8 +691,8 @@ export default function LiveFeedPage({ user, userData }) {
                           ) : (
                             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--secondary)', border: '1px solid rgba(16, 185, 129, 0.3)' }} title="User"><FiUser size={14} /></span>
                           )}
-                          {userProfile.status === 'On Break' && <span style={{ fontSize: '0.65rem', background: '#10b981', color: 'white', padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold' }}>🏖️ ON BREAK</span>}
-                          {userProfile.status === 'On Hold' && <span style={{ fontSize: '0.65rem', background: 'var(--warning)', color: 'black', padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold' }}>⏸️ ON HOLD</span>}
+                          {userProfile.status === 'On Break' && <span className="tec-status-badge info" style={{ fontSize: '0.65rem', padding: '1px 7px' }}>🏖️ ON BREAK</span>}
+                          {userProfile.status === 'On Hold' && <span className="tec-status-badge warning" style={{ fontSize: '0.65rem', padding: '1px 7px' }}>⏸️ ON HOLD</span>}
                         </div>
                         {userProfile.profession && <span style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: '600', marginTop: '1px' }}>{userProfile.profession}</span>}
                         {userProfile.bio && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.4', maxWidth: '320px' }}>{userProfile.bio}</span>}
@@ -725,19 +765,19 @@ export default function LiveFeedPage({ user, userData }) {
                       : 'rgba(255, 255, 255, 0.05)';
 
                     return (
-                      <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: '700', fontSize: '0.92rem', color: 'var(--text-main)', marginBottom: '0.2rem' }}>
+                      <div key={idx} className="feed-task-item-box">
+                        <div className="feed-task-header-row">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: '700', fontSize: '0.92rem', color: 'var(--text-main)', marginBottom: '0.2rem', wordBreak: 'break-word' }}>
                               {task.title || task.description || `Goal #${idx + 1}`}
                             </div>
                             {task.title && task.description && (
-                              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.45', marginBottom: '0.35rem' }}>
+                              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.45', marginBottom: '0.35rem', wordBreak: 'break-word' }}>
                                 {task.description}
                               </div>
                             )}
                             {task.deliverable && (
-                              <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, marginTop: '0.25rem' }}>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, marginTop: '0.25rem', wordBreak: 'break-word' }}>
                                 <strong>Deliverable:</strong> {task.deliverable}
                               </div>
                             )}
@@ -748,7 +788,7 @@ export default function LiveFeedPage({ user, userData }) {
                             )}
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                          <div className="feed-task-badges-wrap">
                             <span style={{
                               fontSize: '0.72rem',
                               fontWeight: 700,
@@ -794,21 +834,49 @@ export default function LiveFeedPage({ user, userData }) {
                           <div style={{ marginTop: '0.65rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.78rem', display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Proof:</span>
                             {(task.proofUrl || task.proofImage) && (
-                              <a
-                                href={task.proofUrl || task.proofImage}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{
-                                  color: 'var(--primary)',
-                                  fontWeight: 600,
-                                  textDecoration: 'underline',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.25rem'
-                                }}
-                              >
-                                {task.proofType === 'link' || (!task.proofImage && task.proofUrl) ? '🔗 View Link' : '📷 View Image'}
-                              </a>
+                              (task.proofType === 'link' || (!task.proofImage && task.proofUrl && !task.proofUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) && !task.proofUrl.includes('res.cloudinary.com'))) ? (
+                                <a
+                                  href={task.proofUrl || task.proofImage}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    color: 'var(--primary)',
+                                    fontWeight: 600,
+                                    textDecoration: 'underline',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}
+                                >
+                                  <FiExternalLink size={12} /> View Link
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveProofPreview({
+                                    url: task.proofImage || task.proofUrl,
+                                    taskTitle: task.title || task.description || 'Goal Proof',
+                                    userName: goal.userName || userProfile.name || 'Member',
+                                    proofText: task.proofText
+                                  })}
+                                  style={{
+                                    background: 'rgba(99, 102, 241, 0.15)',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    color: 'var(--primary)',
+                                    fontWeight: 600,
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease'
+                                  }}
+                                >
+                                  <FiMaximize2 size={12} /> View Image
+                                </button>
+                              )
                             )}
                             {task.proofText && (
                               <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
@@ -821,7 +889,7 @@ export default function LiveFeedPage({ user, userData }) {
                     );
                   })}
                 </div>
-              </div>
+              </motion.div>
               );
             }) : (
               <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -829,76 +897,113 @@ export default function LiveFeedPage({ user, userData }) {
                 <p>Waiting for the first activity of the week...</p>
               </div>
             )}
-          </div>
+          </motion.div>
         </div>
 
         {/* Right Column: Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', position: 'sticky', top: '2rem' }}>
+        <div className="live-feed-sidebar-column">
           
           {/* Top Performer Card */}
-          <div style={{ 
-            background: 'linear-gradient(135deg, #6366f1, #a855f7)', 
-            borderRadius: '24px', 
-            padding: '2.5rem 2rem', 
-            textAlign: 'center', 
-            color: 'white',
-            boxShadow: '0 20px 40px rgba(168, 85, 247, 0.2)',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+            whileHover={{ y: -3, transition: { duration: 0.15 } }}
+            style={{ 
+              background: 'linear-gradient(135deg, #6366f1, #a855f7)', 
+              borderRadius: '24px', 
+              padding: '2.25rem 1.75rem', 
+              textAlign: 'center', 
+              color: 'white',
+              boxShadow: '0 20px 40px rgba(168, 85, 247, 0.25)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+          >
             <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '100px', height: '100px', background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }}></div>
-            <div style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1.5rem', letterSpacing: '1px' }}>Top Performer</div>
+            <div style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', marginBottom: '1.25rem', letterSpacing: '1.5px', opacity: 0.9 }}>
+              👑 Weekly MVP
+            </div>
             
             {topPerformer ? (
               <>
-                <div style={{ position: 'relative', display: 'inline-block', marginBottom: '1.5rem' }}>
+                <div 
+                  onClick={() => {
+                    const prof = usersMap[topPerformer.userId] || {};
+                    setSelectedUser({ ...prof, userName: topPerformer.userName || prof.name || 'Member', userId: topPerformer.userId, profilePicUrl: topPerformer.profilePicUrl || prof.profilePicUrl, totalPoints: prof.totalPoints });
+                  }}
+                  style={{ position: 'relative', display: 'inline-block', marginBottom: '1.25rem', cursor: 'pointer' }}
+                >
                   {topPerformer.profilePicUrl || usersMap[topPerformer.userId]?.profilePicUrl ? (
-                    <img src={topPerformer.profilePicUrl || usersMap[topPerformer.userId]?.profilePicUrl} alt={topPerformer.userName} style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '4px solid rgba(255,255,255,0.2)' }} />
+                    <img src={topPerformer.profilePicUrl || usersMap[topPerformer.userId]?.profilePicUrl} alt={topPerformer.userName} style={{ width: '96px', height: '96px', borderRadius: '50%', objectFit: 'cover', border: '4px solid rgba(255,255,255,0.3)', boxShadow: '0 8px 20px rgba(0,0,0,0.2)' }} />
                   ) : (
-                    <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold' }}>
+                    <div style={{ width: '96px', height: '96px', borderRadius: '50%', background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold' }}>
                       {topPerformer.userName?.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div style={{ position: 'absolute', bottom: '0', right: '0', background: '#eab308', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '4px solid #a855f7' }}>
-                    <FiAward size={14} />
-                  </div>
+                  <motion.div 
+                    animate={{ rotate: [0, -10, 10, -10, 0] }}
+                    transition={{ repeat: Infinity, duration: 3, repeatDelay: 4 }}
+                    style={{ position: 'absolute', bottom: '0', right: '0', background: '#eab308', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '3px solid #ffffff', color: '#78350f', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}
+                  >
+                    <FiAward size={16} />
+                  </motion.div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <h4 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0 }}>{topPerformer.userName}</h4>
+
+                <div 
+                  onClick={() => {
+                    const prof = usersMap[topPerformer.userId] || {};
+                    setSelectedUser({ ...prof, userName: topPerformer.userName || prof.name || 'Member', userId: topPerformer.userId, profilePicUrl: topPerformer.profilePicUrl || prof.profilePicUrl, totalPoints: prof.totalPoints });
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}
+                >
+                  <h4 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0 }}>{topPerformer.userName}</h4>
                   {usersMap[topPerformer.userId]?.isAdmin ? (
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.3rem', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Admin"><FiShield size={18} /></span>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.25)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.4)' }} title="Admin"><FiShield size={14} /></span>
                   ) : usersMap[topPerformer.userId]?.isModerator ? (
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.3rem', borderRadius: '50%', background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.3)' }} title="Moderator"><FiCheckCircle size={18} /></span>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '50%', background: 'rgba(255, 255, 255, 0.25)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.4)' }} title="Moderator"><FiCheckCircle size={14} /></span>
                   ) : (
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.3rem', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--secondary)', border: '1px solid rgba(16, 185, 129, 0.3)' }} title="User"><FiUser size={18} /></span>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem', borderRadius: '50%', background: 'rgba(255, 255, 255, 0.2)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.3)' }} title="User"><FiUser size={14} /></span>
                   )}
                 </div>
+
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '1rem' }}>
                   {[...Array(5)].map((_, i) => (
                     <FiStar 
                       key={i} 
-                      size={20} 
-                      fill={i < calculateStars(usersMap[topPerformer.userId]?.totalPoints || 0) ? '#fff' : 'none'} 
-                      stroke={i < calculateStars(usersMap[topPerformer.userId]?.totalPoints || 0) ? 'none' : 'rgba(255,255,255,0.4)'}
+                      size={18} 
+                      fill={i < calculateStars(usersMap[topPerformer.userId]?.totalPoints || 0) ? '#fbbf24' : 'none'} 
+                      stroke={i < calculateStars(usersMap[topPerformer.userId]?.totalPoints || 0) ? '#fbbf24' : 'rgba(255,255,255,0.4)'}
                     />
                   ))}
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.15)', padding: '0.6rem 1.2rem', borderRadius: '12px', display: 'inline-block', fontSize: '0.9rem', fontWeight: '600', marginBottom: '1rem' }}>
-                  🌟 {topPerformer.weeklyPoints || 0} Points this week
+
+                <div style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(4px)', padding: '0.5rem 1.1rem', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', fontWeight: '700', marginBottom: '0.85rem' }}>
+                  <span>🌟</span>
+                  <span>{topPerformer.weeklyPoints || 0} Points this week</span>
                 </div>
-                <div style={{ fontSize: '0.85rem', opacity: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                  <FiCheckCircle size={14} /> Verified Achievement
+
+                <div style={{ fontSize: '0.8rem', opacity: 0.85, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+                  <FiCheckCircle size={14} /> Verified Top Score
                 </div>
               </>
             ) : (
-              <p style={{ opacity: 0.7 }}>Competition is heating up!</p>
+              <p style={{ opacity: 0.8, fontSize: '0.9rem' }}>Competition is heating up!</p>
             )}
-          </div>
+          </motion.div>
 
-          {/* Top 3 Setters */}
-          <div className="glass-panel" style={{ padding: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1.5rem' }}>Top 3 for the week</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Top 3 Setters & Gamified Podium */}
+          <div className="glass-panel" style={{ padding: '1.5rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>🏆</span> Top 3 This Week
+              </h3>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.04)', padding: '0.2rem 0.5rem', borderRadius: '6px', fontWeight: 600 }}>
+                First to Finish
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {(() => {
                 const getTime = (ts) => {
                   if (!ts) return Infinity;
@@ -911,31 +1016,84 @@ export default function LiveFeedPage({ user, userData }) {
                   .slice(0, 3);
                 
                 if (top3.length === 0) {
-                  return <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Waiting for users to set goals...</p>;
+                  return <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', textAlign: 'center', margin: '1rem 0' }}>Waiting for users to set goals...</p>;
                 }
+
+                const rankMeta = [
+                  { medal: '🥇', label: '#1 Gold', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.1)', border: 'rgba(251, 191, 36, 0.3)' },
+                  { medal: '🥈', label: '#2 Silver', color: '#cbd5e1', bg: 'rgba(203, 213, 225, 0.1)', border: 'rgba(203, 213, 225, 0.25)' },
+                  { medal: '🥉', label: '#3 Bronze', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', border: 'rgba(245, 158, 11, 0.25)' }
+                ];
 
                 return top3.map((g, i) => {
                   const progress = g.progress || 0;
+                  const meta = rankMeta[i] || rankMeta[2];
+                  const userProfile = usersMap[g.userId] || {};
+
                   return (
-                    <div key={g.id} style={{ padding: '1rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '1rem', color: i === 0 ? '#fbbf24' : i === 1 ? '#9ca3af' : '#b45309' }}>#{i + 1}</div>
-                        {g.profilePicUrl ? (
-                          <img src={g.profilePicUrl} alt={g.userName} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
-                        ) : (
-                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                            {g.userName?.charAt(0).toUpperCase()}
+                    <motion.div 
+                      key={g.id}
+                      initial={{ opacity: 0, x: 16 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.08 }}
+                      whileHover={{ scale: 1.01, transition: { duration: 0.15 } }}
+                      style={{ 
+                        padding: '0.9rem 1rem', 
+                        background: meta.bg, 
+                        borderRadius: '16px', 
+                        border: `1px solid ${meta.border}`,
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
+                        <div style={{ fontSize: '1.25rem', lineHeight: 1 }} title={meta.label}>{meta.medal}</div>
+                        
+                        <div 
+                          onClick={() => setSelectedUser({ ...userProfile, userName: g.userName || userProfile.name || 'Member', userId: g.userId, profilePicUrl: g.profilePicUrl || userProfile.profilePicUrl, totalPoints: userProfile.totalPoints })}
+                          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, minWidth: 0 }}
+                        >
+                          {g.profilePicUrl ? (
+                            <img src={g.profilePicUrl} alt={g.userName} style={{ width: '34px', height: '34px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${meta.color}` }} />
+                          ) : (
+                            <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                              {g.userName?.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {g.userName}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                              {g.weeklyPoints || 0} pts earned
+                            </div>
                           </div>
-                        )}
-                        <span style={{ fontWeight: '600', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.userName}</span>
+                        </div>
+
+                        <span style={{ 
+                          fontSize: '0.72rem', 
+                          fontWeight: 700, 
+                          color: progress === 100 ? '#10b981' : meta.color,
+                          background: progress === 100 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.05)',
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '10px'
+                        }}>
+                          {progress}%
+                        </span>
                       </div>
-                      <div style={{ width: '100%', height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? 'var(--secondary)' : 'var(--primary)', transition: 'width 0.3s ease' }}></div>
+
+                      <div style={{ width: '100%', height: '5px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progress}%` }}
+                          transition={{ duration: 0.6, ease: 'easeOut' }}
+                          style={{ 
+                            height: '100%', 
+                            background: progress === 100 ? '#10b981' : 'linear-gradient(90deg, var(--primary), #a855f7)', 
+                            borderRadius: '3px' 
+                          }}
+                        />
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                        {progress}% Completed
-                      </div>
-                    </div>
+                    </motion.div>
                   );
                 });
               })()}
@@ -945,56 +1103,230 @@ export default function LiveFeedPage({ user, userData }) {
       </div>
 
       {/* ── Profile Modal ── */}
-      {selectedUser && (
-        <div onClick={() => setSelectedUser(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '2rem', borderRadius: '20px', position: 'relative' }}>
-            <button onClick={() => setSelectedUser(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>&times;</button>
+      <AnimatePresence>
+        {selectedUser && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedUser(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.75)',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem'
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              onClick={e => e.stopPropagation()}
+              className="glass-panel"
+              style={{
+                width: '100%',
+                maxWidth: '420px',
+                padding: '2rem',
+                borderRadius: '24px',
+                position: 'relative',
+                border: '1px solid rgba(255,255,255,0.12)',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+              }}
+            >
+              <button
+                onClick={() => setSelectedUser(null)}
+                style={{
+                  position: 'absolute',
+                  top: '1rem',
+                  right: '1rem',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                  transition: 'background 0.2s'
+                }}
+              >
+                <FiX size={18} />
+              </button>
 
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '1.5rem' }}>
-              {selectedUser.profilePicUrl ? (
-                <img src={selectedUser.profilePicUrl} alt={selectedUser.userName} style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary)', marginBottom: '1rem' }} />
-              ) : (
-                <div style={{ width: '90px', height: '90px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>
-                  {selectedUser.userName?.charAt(0).toUpperCase()}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '1.5rem' }}>
+                {selectedUser.profilePicUrl ? (
+                  <img src={selectedUser.profilePicUrl} alt={selectedUser.userName} style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary)', marginBottom: '1rem' }} />
+                ) : (
+                  <div style={{ width: '90px', height: '90px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+                    {selectedUser.userName?.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.3rem' }}>{selectedUser.userName}</h3>
+                {selectedUser.profession && <div style={{ fontSize: '0.875rem', color: 'var(--primary)', fontWeight: '600', marginBottom: '0.5rem' }}>{selectedUser.profession}</div>}
+                {selectedUser.bio && <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6', margin: '0 0 1rem' }}>{selectedUser.bio}</p>}
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '0.5rem' }}>
+                  {[...Array(5)].map((_, i) => (
+                    <FiStar key={i} size={16} fill={i < calculateStars(selectedUser.totalPoints || 0) ? 'var(--star-color)' : 'none'} className={i < calculateStars(selectedUser.totalPoints || 0) ? 'star-filled' : 'star-empty'} />
+                  ))}
+                </div>
+                <div style={{ fontSize: '0.9rem', fontWeight: '800', color: '#10b981' }}>
+                  {selectedUser.totalPoints || 0} Total Points
+                </div>
+              </div>
+
+              {selectedUser.socials && Object.values(selectedUser.socials).some(v => v) && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Connect</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    {[
+                      { key: 'twitter', label: '𝕏 Twitter / X', prefix: 'https://twitter.com/' },
+                      { key: 'instagram', label: '📸 Instagram', prefix: 'https://instagram.com/' },
+                      { key: 'linkedin', label: '💼 LinkedIn', prefix: 'https://' },
+                      { key: 'github', label: '🐙 GitHub', prefix: 'https://' }
+                    ].map(s => selectedUser.socials[s.key] ? (
+                      <a key={s.key} href={selectedUser.socials[s.key].startsWith('http') ? selectedUser.socials[s.key] : `${s.prefix}${selectedUser.socials[s.key].replace('@','')}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.8rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', textDecoration: 'none', color: 'var(--text-main)', fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s', fontWeight: '500' }}>
+                        <span>{s.label}</span>
+                        <span style={{ marginLeft: 'auto', color: 'var(--primary)', opacity: 0.8 }}>Visit &rarr;</span>
+                      </a>
+                    ) : null)}
+                  </div>
                 </div>
               )}
-              <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.3rem' }}>{selectedUser.userName}</h3>
-              {selectedUser.profession && <div style={{ fontSize: '0.875rem', color: 'var(--primary)', fontWeight: '600', marginBottom: '0.5rem' }}>{selectedUser.profession}</div>}
-              {selectedUser.bio && <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6', margin: '0 0 1rem' }}>{selectedUser.bio}</p>}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '0.5rem' }}>
-                {[...Array(5)].map((_, i) => (
-                  <FiStar key={i} size={16} fill={i < calculateStars(selectedUser.totalPoints || 0) ? 'var(--star-color)' : 'none'} className={i < calculateStars(selectedUser.totalPoints || 0) ? 'star-filled' : 'star-empty'} />
-                ))}
-              </div>
-              <div style={{ fontSize: '0.9rem', fontWeight: '800', color: '#10b981' }}>
-                {selectedUser.totalPoints || 0} Total Points
-              </div>
-            </div>
+              {!selectedUser.socials || !Object.values(selectedUser.socials || {}).some(v => v) ? (
+                <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.5rem' }}>No social links added yet.</p>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {selectedUser.socials && Object.values(selectedUser.socials).some(v => v) && (
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Connect</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                  {[
-                    { key: 'twitter', label: '𝕏 Twitter / X', prefix: 'https://twitter.com/' },
-                    { key: 'instagram', label: '📸 Instagram', prefix: 'https://instagram.com/' },
-                    { key: 'linkedin', label: '💼 LinkedIn', prefix: 'https://' },
-                    { key: 'github', label: '🐙 GitHub', prefix: 'https://' }
-                  ].map(s => selectedUser.socials[s.key] ? (
-                    <a key={s.key} href={selectedUser.socials[s.key].startsWith('http') ? selectedUser.socials[s.key] : `${s.prefix}${selectedUser.socials[s.key].replace('@','')}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.8rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', textDecoration: 'none', color: 'var(--text-main)', fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s', fontWeight: '500' }}>
-                      <span>{s.label}</span>
-                      <span style={{ marginLeft: 'auto', color: 'var(--primary)', opacity: 0.8 }}>Visit &rarr;</span>
-                    </a>
-                  ) : null)}
+      {/* ── Active Proof Lightbox Modal ── */}
+      <AnimatePresence>
+        {activeProofPreview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setActiveProofPreview(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.85)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 1100,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1.5rem'
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={e => e.stopPropagation()}
+              className="glass-panel"
+              style={{
+                width: '100%',
+                maxWidth: '680px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                borderRadius: '24px',
+                overflow: 'hidden',
+                border: '1px solid rgba(255,255,255,0.15)',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                    {activeProofPreview.taskTitle}
+                  </h4>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    Submitted by <strong>{activeProofPreview.userName}</strong>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <a
+                    href={activeProofPreview.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: 'var(--text-main)',
+                      borderRadius: '8px',
+                      padding: '0.45rem 0.75rem',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      textDecoration: 'none',
+                      cursor: 'pointer'
+                    }}
+                    title="Open in new tab"
+                  >
+                    <FiExternalLink size={13} /> Full Size
+                  </a>
+                  <button
+                    onClick={() => setActiveProofPreview(null)}
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--text-secondary)',
+                      transition: 'background 0.2s'
+                    }}
+                  >
+                    <FiX size={18} />
+                  </button>
                 </div>
               </div>
-            )}
-            {!selectedUser.socials || !Object.values(selectedUser.socials || {}).some(v => v) ? (
-              <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.5rem' }}>No social links added yet.</p>
-            ) : null}
-          </div>
-        </div>
-      )}
+
+              {/* Image Container */}
+              <div style={{ padding: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.3)', overflow: 'hidden', minHeight: '240px', maxHeight: '58vh' }}>
+                <img
+                  src={activeProofPreview.url}
+                  alt={activeProofPreview.taskTitle}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '56vh',
+                    objectFit: 'contain',
+                    borderRadius: '12px'
+                  }}
+                />
+              </div>
+
+              {/* Caption / Note if any */}
+              {activeProofPreview.proofText && (
+                <div style={{ padding: '1rem 1.5rem', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  "{activeProofPreview.proofText}"
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* ── Birthday Celebration Modal ── */}
       <BirthdayModal
         isOpen={showBirthdayModal}

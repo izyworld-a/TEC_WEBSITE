@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { getWeekId } from '../utils/weekUtils';
-import { FiInbox, FiSend, FiCheckSquare, FiSquare, FiCheck, FiRefreshCw, FiAlertTriangle, FiArrowRight, FiExternalLink, FiClock } from 'react-icons/fi';
+import { FiInbox, FiSend, FiCheckSquare, FiSquare, FiCheck, FiRefreshCw, FiAlertTriangle, FiArrowRight, FiExternalLink, FiClock, FiX, FiCheckCircle } from 'react-icons/fi';
 import './peerGoals.css';
 
 export default function GoalsInboxPage({ user, userData }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('received'); // 'received' | 'sent'
+  const [filterSelection, setFilterSelection] = useState('all'); // 'all' | 'selected' | 'unselected'
   const [receivedGoals, setReceivedGoals] = useState([]);
   const [sentGoals, setSentGoals] = useState([]);
   const [selectedGoalIds, setSelectedGoalIds] = useState(new Set());
@@ -60,6 +63,17 @@ export default function GoalsInboxPage({ user, userData }) {
   const [reviewVerdict, setReviewVerdict] = useState('approved');
   const [reviewComment, setReviewComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Escape key handler for review modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && reviewModalOpen) {
+        setReviewModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [reviewModalOpen]);
 
   // 1. Fetch total peers in space to enforce suggestion lock
   useEffect(() => {
@@ -232,6 +246,12 @@ export default function GoalsInboxPage({ user, userData }) {
         });
       }
 
+      confetti({
+        particleCount: 100,
+        spread: 80,
+        origin: { y: 0.6 }
+      });
+
       alert('🎉 Goals accepted! Your Active Goals Kanban board is now ready.');
       navigate('/dashboard');
     } catch (err) {
@@ -351,351 +371,597 @@ export default function GoalsInboxPage({ user, userData }) {
       </div>
 
       {/* Tabs */}
-      <div className="inbox-tabs">
+      <div
+        className="inbox-tabs"
+        style={{
+          display: 'inline-flex',
+          gap: '0.4rem',
+          background: 'rgba(255, 255, 255, 0.04)',
+          padding: '6px',
+          borderRadius: '14px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          position: 'relative',
+          marginBottom: '1.5rem'
+        }}
+      >
         <button
+          type="button"
           onClick={() => setActiveTab('received')}
           className={`inbox-tab-btn ${activeTab === 'received' ? 'active' : ''}`}
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            background: 'transparent',
+            color: activeTab === 'received' ? '#ffffff' : 'var(--text-secondary)'
+          }}
         >
+          {activeTab === 'received' && (
+            <motion.div
+              layoutId="inboxTabActivePill"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'var(--primary)',
+                borderRadius: '10px',
+                zIndex: -1,
+                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+              }}
+              transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+            />
+          )}
           <FiInbox size={18} />
           Goals Suggested TO Me ({receivedGoals.length})
         </button>
+
         <button
+          type="button"
           onClick={() => setActiveTab('sent')}
           className={`inbox-tab-btn ${activeTab === 'sent' ? 'active' : ''}`}
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            background: 'transparent',
+            color: activeTab === 'sent' ? '#ffffff' : 'var(--text-secondary)'
+          }}
         >
+          {activeTab === 'sent' && (
+            <motion.div
+              layoutId="inboxTabActivePill"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'var(--primary)',
+                borderRadius: '10px',
+                zIndex: -1,
+                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+              }}
+              transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+            />
+          )}
           <FiSend size={18} />
           Goals I Suggested to Others ({sentGoals.length})
         </button>
       </div>
 
-      {/* TAB 1: RECEIVED GOALS */}
-      {activeTab === 'received' && (
-        <>
-          {/* Lockout Warning if Suggestions Incomplete */}
-          {!isSuggestionObligationFulfilled && (
-            <div
-              style={{
-                background: 'rgba(245, 158, 11, 0.1)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                borderRadius: '14px',
-                padding: '1rem 1.25rem',
-                marginBottom: '1.5rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                color: 'var(--warning)'
-              }}
-            >
-              <FiAlertTriangle size={24} style={{ flexShrink: 0 }} />
-              <div>
-                <strong>Mandatory Suggestion Requirement:</strong> You have assigned goals to{' '}
-                <strong>{mySuggestionsCount} of {allPeersCount}</strong> peers. You must assign 1 goal to every member in
-                your Space on the{' '}
-                <a href="/members" style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 'bold' }}>
-                  Members Page
-                </a>{' '}
-                before you can accept your active goals.
+      <AnimatePresence mode="wait">
+        {activeTab === 'received' ? (
+          <motion.div
+            key="tab-received"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Lockout Warning if Suggestions Incomplete */}
+            {!isSuggestionObligationFulfilled && (
+              <div
+                style={{
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: '14px',
+                  padding: '1rem 1.25rem',
+                  marginBottom: '1.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  color: 'var(--warning)'
+                }}
+              >
+                <FiAlertTriangle size={24} style={{ flexShrink: 0 }} />
+                <div>
+                  <strong>Mandatory Suggestion Requirement:</strong> You have assigned goals to{' '}
+                  <strong>{mySuggestionsCount} of {allPeersCount}</strong> peers. You must assign 1 goal to every member in
+                  your Space on the{' '}
+                  <a href="/members" style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 'bold' }}>
+                    Members Page
+                  </a>{' '}
+                  before you can accept your active goals.
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-              Loading suggested goals...
-            </div>
-          ) : receivedGoals.length === 0 ? (
-            <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', borderRadius: '16px' }}>
-              <FiInbox size={40} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
-              <h3>No Goals In Your Inbox Yet</h3>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Peers have not suggested any goals for you yet for this cycle ({currentWeekId}).
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="inbox-grid">
-                {receivedGoals.map((goal) => {
-                  const isSelected = selectedGoalIds.has(goal.id);
-                  return (
-                    <div
-                      key={goal.id}
-                      className={`inbox-card ${isSelected ? 'selected' : ''}`}
-                      onClick={() => handleToggleSelect(goal.id)}
-                      style={{ cursor: 'pointer' }}
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                Loading suggested goals...
+              </div>
+            ) : receivedGoals.length === 0 ? (
+              <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', borderRadius: '16px' }}>
+                <FiInbox size={40} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
+                <h3>No Goals In Your Inbox Yet</h3>
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  Peers have not suggested any goals for you yet for this cycle ({currentWeekId}).
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Filter and Selection bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600, marginRight: '0.25rem' }}>Show:</span>
+                    {[
+                      { id: 'all', label: `All (${receivedGoals.length})` },
+                      { id: 'selected', label: `Selected (${selectedGoalIds.size})` },
+                      { id: 'unselected', label: `Available (${receivedGoals.length - selectedGoalIds.size})` }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setFilterSelection(f.id)}
+                        style={{
+                          background: filterSelection === f.id ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                          color: filterSelection === f.id ? '#ffffff' : 'var(--text-secondary)',
+                          border: '1px solid ' + (filterSelection === f.id ? 'var(--primary)' : 'rgba(255,255,255,0.08)'),
+                          borderRadius: '8px',
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedGoalIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGoalIds(new Set())}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        textDecoration: 'underline'
+                      }}
                     >
-                      <div className="inbox-card-top">
-                        <div className="suggester-info">
-                          {goal.fromUserPhoto ? (
-                            <img src={goal.fromUserPhoto} alt={goal.fromUserName} className="suggester-avatar" />
-                          ) : (
-                            <div
+                      Clear selections ({selectedGoalIds.size})
+                    </button>
+                  )}
+                </div>
+
+                <div className="inbox-grid">
+                  <AnimatePresence>
+                    {receivedGoals
+                      .filter(goal => {
+                        if (filterSelection === 'selected') return selectedGoalIds.has(goal.id);
+                        if (filterSelection === 'unselected') return !selectedGoalIds.has(goal.id);
+                        return true;
+                      })
+                      .map((goal) => {
+                        const isSelected = selectedGoalIds.has(goal.id);
+                        return (
+                          <motion.div
+                            layout
+                            key={goal.id}
+                            initial={{ opacity: 0, y: 14 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.25 }}
+                            whileHover={{ y: -3, transition: { duration: 0.15 } }}
+                            className={`inbox-card ${isSelected ? 'selected' : ''}`}
+                            onClick={() => handleToggleSelect(goal.id)}
+                            style={{
+                              cursor: 'pointer',
+                              border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border)',
+                              background: isSelected ? 'rgba(99, 102, 241, 0.06)' : 'var(--bg-card)',
+                              transition: 'border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease'
+                            }}
+                          >
+                            <div className="inbox-card-top">
+                              <div className="suggester-info">
+                                {goal.fromUserPhoto ? (
+                                  <img src={goal.fromUserPhoto} alt={goal.fromUserName} className="suggester-avatar" />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: '32px',
+                                      height: '32px',
+                                      borderRadius: '50%',
+                                      background: 'var(--primary)',
+                                      color: 'white',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontSize: '0.8rem',
+                                      fontWeight: 'bold'
+                                    }}
+                                  >
+                                    {goal.fromUserName?.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="suggester-name">{goal.fromUserName}</div>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assigned to you</span>
+                                </div>
+                              </div>
+
+                              <motion.div
+                                animate={{ scale: isSelected ? [1, 1.25, 1] : 1 }}
+                                transition={{ duration: 0.2 }}
+                                style={{ fontSize: '1.3rem', color: isSelected ? 'var(--primary)' : 'var(--text-secondary)', display: 'flex' }}
+                              >
+                                {isSelected ? <FiCheckSquare /> : <FiSquare />}
+                              </motion.div>
+                            </div>
+
+                            <h3 className="inbox-goal-title">{goal.title}</h3>
+                            {goal.description && <p className="inbox-goal-desc">{goal.description}</p>}
+
+                            <div className="inbox-deliverable-box">
+                              <span className="inbox-deliverable-label">What You Must Deliver:</span>
+                              <p className="inbox-deliverable-content">{goal.deliverable}</p>
+                            </div>
+
+                            <div style={{ marginTop: 'auto', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.75rem',
+                                  fontWeight: '700',
+                                  padding: '0.25rem 0.6rem',
+                                  borderRadius: '6px',
+                                  background: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.05)',
+                                  color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                {isSelected ? '✓ Selected for Week' : 'Click card to select'}
+                              </span>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                  </AnimatePresence>
+                </div>
+
+                {/* Sticky Acceptance Bar */}
+                <motion.div
+                  layout
+                  initial={{ y: 30, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  className="inbox-sticky-footer"
+                  style={{
+                    boxShadow: selectedGoalIds.size >= 2 ? '0 12px 35px rgba(99, 102, 241, 0.25)' : '0 10px 30px rgba(0, 0, 0, 0.15)',
+                    borderColor: selectedGoalIds.size >= 2 ? 'rgba(99, 102, 241, 0.4)' : 'var(--border)',
+                    transition: 'box-shadow 0.3s ease, border-color 0.3s ease'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span>Selected: {selectedGoalIds.size} Goal{selectedGoalIds.size === 1 ? '' : 's'}</span>
+                      {hasMinimumSelection && (
+                        <span style={{ fontSize: '0.72rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '0.15rem 0.5rem', borderRadius: '12px', fontWeight: 700 }}>
+                          ✓ Minimum met
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {!hasMinimumSelection
+                        ? `Select at least ${2 - selectedGoalIds.size} more goal(s) to commit`
+                        : 'Ready to commit for this weekly cycle'}
+                    </div>
+                  </div>
+
+                  <motion.button
+                    whileHover={hasMinimumSelection && isSuggestionObligationFulfilled && !accepting ? { scale: 1.03 } : {}}
+                    whileTap={hasMinimumSelection && isSuggestionObligationFulfilled && !accepting ? { scale: 0.97 } : {}}
+                    onClick={handleAcceptGoals}
+                    disabled={!hasMinimumSelection || !isSuggestionObligationFulfilled || accepting}
+                    className="btn btn-primary"
+                    style={{
+                      padding: '0.75rem 1.75rem',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      opacity: !hasMinimumSelection || !isSuggestionObligationFulfilled ? 0.5 : 1,
+                      cursor: !hasMinimumSelection || !isSuggestionObligationFulfilled ? 'not-allowed' : 'pointer',
+                      fontWeight: 700
+                    }}
+                  >
+                    {accepting ? (
+                      'Accepting...'
+                    ) : (
+                      <>
+                        Accept Selected Goals <FiArrowRight />
+                      </>
+                    )}
+                  </motion.button>
+                </motion.div>
+              </>
+            )}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="tab-sent"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {sentGoals.length === 0 ? (
+              <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', borderRadius: '16px' }}>
+                <FiSend size={40} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
+                <h3>No Goals Assigned Yet</h3>
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  You have not assigned any goals to peers yet this cycle. Visit the{' '}
+                  <a href="/members" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                    Members Page
+                  </a>{' '}
+                  to get started.
+                </p>
+              </div>
+            ) : (
+              <div className="inbox-grid">
+                <AnimatePresence>
+                  {sentGoals.map((goal) => {
+                    const executionStatus = goal.executionStatus || (goal.status === 'accepted' ? 'in_progress' : 'suggested');
+                    return (
+                      <motion.div
+                        layout
+                        key={goal.id}
+                        initial={{ opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.25 }}
+                        whileHover={{ y: -2, transition: { duration: 0.15 } }}
+                        className="inbox-card"
+                      >
+                        <div className="inbox-card-top">
+                          <div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assigned to:</span>
+                            <h4 style={{ margin: '0.1rem 0 0', fontSize: '0.95rem', fontWeight: '700' }}>
+                              {goal.toUserName}
+                            </h4>
+                          </div>
+
+                          <span
+                            style={{
+                              fontSize: '0.75rem',
+                              fontWeight: '700',
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '20px',
+                              textTransform: 'uppercase',
+                              background:
+                                executionStatus === 'completed'
+                                  ? 'rgba(16, 185, 129, 0.15)'
+                                  : executionStatus === 'submitted'
+                                  ? 'rgba(245, 158, 11, 0.15)'
+                                  : 'rgba(99, 102, 241, 0.15)',
+                              color:
+                                executionStatus === 'completed'
+                                  ? '#10b981'
+                                  : executionStatus === 'submitted'
+                                  ? 'var(--warning)'
+                                  : 'var(--primary)'
+                            }}
+                          >
+                            {executionStatus.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <h3 className="inbox-goal-title">{goal.title}</h3>
+                        {goal.description && <p className="inbox-goal-desc">{goal.description}</p>}
+
+                        <div className="inbox-deliverable-box">
+                          <span className="inbox-deliverable-label">Deliverable Expected:</span>
+                          <p className="inbox-deliverable-content">{goal.deliverable}</p>
+                        </div>
+
+                        {/* Review Actions if Submitted */}
+                        {executionStatus === 'submitted' && (
+                          <div
+                            style={{
+                              marginTop: 'auto',
+                              paddingTop: '0.85rem',
+                              borderTop: '1px solid var(--border)',
+                              display: 'flex',
+                              gap: '0.5rem'
+                            }}
+                          >
+                            <button
+                              onClick={() => handleOpenReviewModal(goal, 'approved')}
+                              className="btn btn-secondary"
                               style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '50%',
-                                background: 'var(--primary)',
-                                color: 'white',
+                                flex: 1,
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                borderColor: '#10b981',
+                                color: '#10b981',
+                                fontSize: '0.8rem',
+                                padding: '0.5rem',
+                                borderRadius: '8px',
+                                fontWeight: 600,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '0.8rem',
-                                fontWeight: 'bold'
+                                gap: '0.35rem'
                               }}
                             >
-                              {goal.fromUserName?.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <div className="suggester-name">{goal.fromUserName}</div>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assigned to you</span>
+                              <FiCheck /> Approve
+                            </button>
+                            <button
+                              onClick={() => handleOpenReviewModal(goal, 'revision_requested')}
+                              className="btn btn-secondary"
+                              style={{
+                                flex: 1,
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                borderColor: 'var(--danger)',
+                                color: 'var(--danger)',
+                                fontSize: '0.8rem',
+                                padding: '0.5rem',
+                                borderRadius: '8px',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.35rem'
+                              }}
+                            >
+                              <FiRefreshCw /> Request Revision
+                            </button>
                           </div>
-                        </div>
-
-                        <div style={{ fontSize: '1.3rem', color: isSelected ? 'var(--primary)' : 'var(--text-secondary)' }}>
-                          {isSelected ? <FiCheckSquare /> : <FiSquare />}
-                        </div>
-                      </div>
-
-                      <h3 className="inbox-goal-title">{goal.title}</h3>
-                      {goal.description && <p className="inbox-goal-desc">{goal.description}</p>}
-
-                      <div className="inbox-deliverable-box">
-                        <span className="inbox-deliverable-label">What You Must Deliver:</span>
-                        <p className="inbox-deliverable-content">{goal.deliverable}</p>
-                      </div>
-
-                      <div style={{ marginTop: 'auto', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span
-                          style={{
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '6px',
-                            background: isSelected ? 'rgba(79, 70, 229, 0.15)' : 'rgba(0,0,0,0.05)',
-                            color: isSelected ? 'var(--primary)' : 'var(--text-secondary)'
-                          }}
-                        >
-                          {isSelected ? '✓ Selected for Week' : 'Click to select'}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
-
-              {/* Sticky Acceptance Bar */}
-              <div className="inbox-sticky-footer">
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>
-                    Selected: {selectedGoalIds.size} Goal{selectedGoalIds.size === 1 ? '' : 's'} (Minimum 2 required)
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {!hasMinimumSelection
-                      ? `Select at least ${2 - selectedGoalIds.size} more goal(s)`
-                      : 'Ready to commit for this weekly cycle'}
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleAcceptGoals}
-                  disabled={!hasMinimumSelection || !isSuggestionObligationFulfilled || accepting}
-                  className="btn btn-primary"
-                  style={{
-                    padding: '0.75rem 1.75rem',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    opacity: !hasMinimumSelection || !isSuggestionObligationFulfilled ? 0.5 : 1
-                  }}
-                >
-                  {accepting ? (
-                    'Accepting...'
-                  ) : (
-                    <>
-                      Accept Selected Goals <FiArrowRight />
-                    </>
-                  )}
-                </button>
-              </div>
-            </>
-          )}
-        </>
-      )}
-
-      {/* TAB 2: SENT GOALS & PEER REVIEW */}
-      {activeTab === 'sent' && (
-        <>
-          {sentGoals.length === 0 ? (
-            <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', borderRadius: '16px' }}>
-              <FiSend size={40} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
-              <h3>No Goals Assigned Yet</h3>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                You have not assigned any goals to peers yet this cycle. Visit the{' '}
-                <a href="/members" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
-                  Members Page
-                </a>{' '}
-                to get started.
-              </p>
-            </div>
-          ) : (
-            <div className="inbox-grid">
-              {sentGoals.map((goal) => {
-                const executionStatus = goal.executionStatus || (goal.status === 'accepted' ? 'in_progress' : 'suggested');
-                return (
-                  <div key={goal.id} className="inbox-card">
-                    <div className="inbox-card-top">
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assigned to:</span>
-                        <h4 style={{ margin: '0.1rem 0 0', fontSize: '0.95rem', fontWeight: '700' }}>
-                          {goal.toUserName}
-                        </h4>
-                      </div>
-
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: '700',
-                          padding: '0.2rem 0.6rem',
-                          borderRadius: '20px',
-                          textTransform: 'uppercase',
-                          background:
-                            executionStatus === 'completed'
-                              ? 'rgba(16, 185, 129, 0.15)'
-                              : executionStatus === 'submitted'
-                              ? 'rgba(245, 158, 11, 0.15)'
-                              : 'rgba(99, 102, 241, 0.15)',
-                          color:
-                            executionStatus === 'completed'
-                              ? '#10b981'
-                              : executionStatus === 'submitted'
-                              ? 'var(--warning)'
-                              : 'var(--primary)'
-                        }}
-                      >
-                        {executionStatus.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    <h3 className="inbox-goal-title">{goal.title}</h3>
-                    {goal.description && <p className="inbox-goal-desc">{goal.description}</p>}
-
-                    <div className="inbox-deliverable-box">
-                      <span className="inbox-deliverable-label">Deliverable Expected:</span>
-                      <p className="inbox-deliverable-content">{goal.deliverable}</p>
-                    </div>
-
-                    {/* Review Actions if Submitted */}
-                    {executionStatus === 'submitted' && (
-                      <div
-                        style={{
-                          marginTop: 'auto',
-                          paddingTop: '0.85rem',
-                          borderTop: '1px solid var(--border)',
-                          display: 'flex',
-                          gap: '0.5rem'
-                        }}
-                      >
-                        <button
-                          onClick={() => handleOpenReviewModal(goal, 'approved')}
-                          className="btn btn-secondary"
-                          style={{
-                            flex: 1,
-                            background: 'rgba(16, 185, 129, 0.15)',
-                            borderColor: '#10b981',
-                            color: '#10b981',
-                            fontSize: '0.8rem',
-                            padding: '0.5rem'
-                          }}
-                        >
-                          <FiCheck /> Approve
-                        </button>
-                        <button
-                          onClick={() => handleOpenReviewModal(goal, 'revision_requested')}
-                          className="btn btn-secondary"
-                          style={{
-                            flex: 1,
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            borderColor: 'var(--danger)',
-                            color: 'var(--danger)',
-                            fontSize: '0.8rem',
-                            padding: '0.5rem'
-                          }}
-                        >
-                          <FiRefreshCw /> Request Revision
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Review Modal */}
-      {reviewModalOpen && reviewingGoal && (
-        <div className="peer-modal-overlay" onClick={() => setReviewModalOpen(false)}>
-          <div className="peer-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="peer-modal-header">
-              <h2>{reviewVerdict === 'approved' ? 'Approve Deliverable' : 'Request Revision'}</h2>
-              <button onClick={() => setReviewModalOpen(false)} className="modal-close-btn">
-                ✕
-              </button>
-            </div>
-
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-              Goal: <strong>{reviewingGoal.title}</strong> (submitted by {reviewingGoal.toUserName})
-            </p>
-
-            <form onSubmit={handleSubmitPeerReview}>
-              <div className="input-group">
-                <label>{reviewVerdict === 'approved' ? 'Approval Comments (Optional)' : 'What needs to be revised? *'}</label>
-                <textarea
-                  className="input-field"
-                  rows={3}
-                  required={reviewVerdict === 'revision_requested'}
-                  placeholder={
-                    reviewVerdict === 'approved'
-                      ? 'Great execution, delivered as expected!'
-                      : 'Please fix the responsive view and provide the updated link...'
-                  }
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+      <AnimatePresence>
+        {reviewModalOpen && reviewingGoal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="peer-modal-overlay"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.75)',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem'
+            }}
+            onClick={() => setReviewModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="peer-modal"
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '24px',
+                width: '100%',
+                maxWidth: '540px',
+                padding: '2rem',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="peer-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>
+                  {reviewVerdict === 'approved' ? '✓ Approve Deliverable' : '↺ Request Revision'}
+                </h2>
                 <button
                   type="button"
                   onClick={() => setReviewModalOpen(false)}
-                  className="btn btn-secondary"
-                  style={{ flex: 1 }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingReview}
-                  className="btn btn-primary"
                   style={{
-                    flex: 2,
-                    background: reviewVerdict === 'approved' ? '#10b981' : 'var(--danger)',
-                    borderColor: reviewVerdict === 'approved' ? '#10b981' : 'var(--danger)'
+                    background: 'rgba(255,255,255,0.06)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: 'var(--text-secondary)'
                   }}
                 >
-                  {submittingReview
-                    ? 'Submitting...'
-                    : reviewVerdict === 'approved'
-                    ? 'Confirm Approval'
-                    : 'Send Revision Request'}
+                  <FiX size={18} />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Goal Under Review</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.95rem', marginTop: '2px' }}>
+                  {reviewingGoal.title}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Submitted by: <strong>{reviewingGoal.toUserName}</strong>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmitPeerReview}>
+                <div className="input-group">
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.875rem' }}>
+                    {reviewVerdict === 'approved' ? 'Approval Comments (Optional)' : 'What needs to be revised? *'}
+                  </label>
+                  <textarea
+                    className="input-field"
+                    rows={3}
+                    required={reviewVerdict === 'revision_requested'}
+                    placeholder={
+                      reviewVerdict === 'approved'
+                        ? 'Great execution, delivered as expected!'
+                        : 'Please fix the deliverable and provide the updated link...'
+                    }
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    style={{ width: '100%', boxSizing: 'border-box', borderRadius: '12px', padding: '0.75rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-main)' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setReviewModalOpen(false)}
+                    className="btn btn-secondary"
+                    style={{ flex: 1, padding: '0.75rem', borderRadius: '12px' }}
+                  >
+                    Cancel
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="submit"
+                    disabled={submittingReview}
+                    className="btn btn-primary"
+                    style={{
+                      flex: 2,
+                      padding: '0.75rem',
+                      borderRadius: '12px',
+                      background: reviewVerdict === 'approved' ? '#10b981' : 'var(--danger)',
+                      borderColor: reviewVerdict === 'approved' ? '#10b981' : 'var(--danger)',
+                      fontWeight: 700
+                    }}
+                  >
+                    {submittingReview
+                      ? 'Submitting...'
+                      : reviewVerdict === 'approved'
+                      ? 'Confirm Approval'
+                      : 'Send Revision Request'}
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

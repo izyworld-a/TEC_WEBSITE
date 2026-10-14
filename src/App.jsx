@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import LiveFeedPage from './pages/LiveFeedPage';
@@ -12,6 +13,7 @@ import MembersPage from './pages/MembersPage';
 import GoalsInboxPage from './pages/GoalsInboxPage';
 import PendingPage from './pages/PendingPage';
 import ForgotPassword from './pages/ForgotPassword';
+import TecSpacePage from './pages/TecSpacePage';
 import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -110,6 +112,7 @@ function App() {
 function AppContent({ user, userData, ProtectedRoute }) {
   const { pathname } = useLocation();
   const isHome = pathname === '/';
+  const isSpace = pathname === '/space' || pathname === '/talent';
   const isAdminRoute = pathname.startsWith('/admin');
   const isDashboardRoute = pathname === '/dashboard';
   const [dashboardSidebarOpen, setDashboardSidebarOpen] = useState(false);
@@ -128,52 +131,65 @@ function AppContent({ user, userData, ProtectedRoute }) {
           onToggleDashboardSidebar={() => setDashboardSidebarOpen(prev => !prev)}
         />
       )}
-      <main className={isHome ? "main-content-home" : (isAdminRoute ? "main-content-admin" : (isDashboardRoute ? "main-content-dashboard" : "main-content"))}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/pending" element={user && userData?.status === 'Pending' ? <PendingPage userData={userData} /> : <Navigate to="/" />} />
+      <main className={isHome || isSpace ? "main-content-home" : (isAdminRoute ? "main-content-admin" : (isDashboardRoute ? "main-content-dashboard" : "main-content"))}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            style={{ width: '100%', minHeight: '100%' }}
+          >
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/space" element={<TecSpacePage user={user} userData={userData} />} />
+              <Route path="/talent" element={<Navigate to="/space" replace />} />
+              <Route path="/livefeed" element={<LiveFeedPage user={user} userData={userData} />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/pending" element={user && userData?.status === 'Pending' ? <PendingPage userData={userData} /> : <Navigate to="/" />} />
 
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard
-                user={user}
-                userData={userData}
-                isMobileSidebarOpen={dashboardSidebarOpen}
-                setIsMobileSidebarOpen={setDashboardSidebarOpen}
-              />
-            </ProtectedRoute>
-          } />
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <Dashboard
+                    user={user}
+                    userData={userData}
+                    isMobileSidebarOpen={dashboardSidebarOpen}
+                    setIsMobileSidebarOpen={setDashboardSidebarOpen}
+                  />
+                </ProtectedRoute>
+              } />
 
-          <Route path="/members" element={
-            <ProtectedRoute>
-              <MembersPage user={user} userData={userData} />
-            </ProtectedRoute>
-          } />
+              <Route path="/members" element={
+                <ProtectedRoute>
+                  <MembersPage user={user} userData={userData} />
+                </ProtectedRoute>
+              } />
 
-          <Route path="/goals-inbox" element={
-            <ProtectedRoute>
-              <GoalsInboxPage user={user} userData={userData} />
-            </ProtectedRoute>
-          } />
+              <Route path="/goals-inbox" element={
+                <ProtectedRoute>
+                  <GoalsInboxPage user={user} userData={userData} />
+                </ProtectedRoute>
+              } />
 
-          <Route path="/admin" element={
-            <ProtectedRoute requireAdmin={true}>
-              <AdminDashboard user={user} userData={userData} />
-            </ProtectedRoute>
-          } />
+              <Route path="/admin" element={
+                <ProtectedRoute requireAdmin={true}>
+                  <AdminDashboard user={user} userData={userData} />
+                </ProtectedRoute>
+              } />
 
-          <Route path="/moderator" element={
-            <ProtectedRoute requireModerator={true}>
-              <ModeratorDashboard user={user} userData={userData} />
-            </ProtectedRoute>
-          } />
-        </Routes>
+              <Route path="/moderator" element={
+                <ProtectedRoute requireModerator={true}>
+                  <ModeratorDashboard user={user} userData={userData} />
+                </ProtectedRoute>
+              } />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
       </main>
-      {!isHome && !isAdminRoute && !isDashboardRoute && (
+      {!isHome && !isSpace && !isAdminRoute && !isDashboardRoute && (
         <footer style={{ 
           textAlign: 'center', 
           padding: '2rem', 

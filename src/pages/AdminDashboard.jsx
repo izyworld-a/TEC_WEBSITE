@@ -123,7 +123,7 @@ export default function AdminDashboard({ user, userData }) {
   // Current week ID
   const currentWeekId = getWeekId(new Date());
 
-  // Close action dropdown on outside click
+  // Close action dropdown and active modals on Escape key or outside click
   const actionMenuRef = useRef(null);
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -131,8 +131,21 @@ export default function AdminDashboard({ user, userData }) {
         setActionMenuUserId(null);
       }
     };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setActionMenuUserId(null);
+        setFundsModalUser(null);
+        setPointsModalUser(null);
+        setDetailModalUser(null);
+        setShowClockModal(false);
+      }
+    };
     document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // ── Real-time Firestore Subscriptions ─────────────────────────────────────
